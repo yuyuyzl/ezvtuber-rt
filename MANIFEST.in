@@ -2,9 +2,6 @@
 include README.md
 include LICENSE
 
-# Include environment setup script
-include env_setup.bat
-
 # Include data folder structure
 graft data
 

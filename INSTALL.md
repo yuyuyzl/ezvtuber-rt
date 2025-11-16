@@ -8,7 +8,7 @@ Before using the library, you need to download the ONNX models:
 
 1. Download the model package from: [Release Page](https://github.com/zpeng11/ezvtuber-rt/releases/download/0.0.1/20241220.zip)
 2. Extract the contents to the `data/` folder in your project directory or provide `EZVTB_DATA` environmental variable points to location.
-3. Download the FFmpeg LGPL release package from [Release Page](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip)
+3. Download the FFmpeg LGPL shared release package from [Release Page](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip)
 4. Extract FFmpeg and provide location to package in `FFMPEG_DIR` environmental variable. This is necessary for both build time and runtime.
 
 ## Install VS2022+ from Microsoft
@@ -34,25 +34,25 @@ pip install -e .
 
 
 ## Basic Usage
-
+### Environment Variables necessary at runtime
+* `set FFMPEG_DIR=C:\Dir\To\FFmpeg` neccesarry
+* `set EZVTB_DEVICE_ID=0` optional to indicate if want to run on non-default GPU
 ### Using TensorRT (NVIDIA GPUs)
 
 ```python
 from ezvtb_rt import CoreTRT
 
 # Initialize the core with TensorRT backend
-core = CoreTRT(
-    tha_dir="data/tha3",           # Path to THA3 models
-    vram_cache_size=2.0,            # VRAM cache size in GB
-    use_eyebrow=True,               # Enable eyebrow animation
-    rife_dir="data/rife",           # Path to RIFE models (frame interpolation)
-    sr_dir="data/sr",               # Path to SR models (super resolution)
-    cache_max_volume=5.0,           # Max cache volume in GB
-    cache_quality=2                 # Cache quality (1-3)
-)
+core = CoreTRT()
 
+#setup input image
+core.setImage(cv2_bgra_image)
 # Use the core for inference
-# ... your inference code here ...
+while True:
+    pose = np.array([0.0, ... 0.0]).astype(np.float32).reshape((1,45)) #Get pose from sensor
+    results = core.inference(pose)
+    for result in results:
+        #This result is a (N, N, 4) BGRA image, display or port to streaming
 ```
 
 ### Using ONNX Runtime (AMD/Intel GPUs)
@@ -60,28 +60,16 @@ core = CoreTRT(
 ```python
 from ezvtb_rt import CoreORT
 
-# Initialize the core with ONNX Runtime backend
-core = CoreORT(
-    tha_dir="data/tha3",
-    vram_cache_size=2.0,
-    use_eyebrow=True,
-    rife_dir="data/rife",
-    sr_dir="data/sr",
-    cache_max_volume=5.0,
-    cache_quality=2
-)
+# Initialize the core with TensorRT backend
+core = CoreTRT()
 
+#setup input image
+core.setImage(cv2_bgra_image)
 # Use the core for inference
-# ... your inference code here ...
+while True:
+    pose = np.array([0.0, ... 0.0]).astype(np.float32).reshape((1,45)) #Get pose from sensor
+    results = core.inference(pose)
+    for result in results:
+        #This result is a (N, N, 4) BGRA image, display or port to streaming
+
 ```
-
-## Verifying Installation
-
-Test your installation:
-
-```python
-import ezvtb_rt
-print(f"ezvtuber-rt version: {ezvtb_rt.__version__}")
-print(f"Available modules: {ezvtb_rt.__all__}")
-```
-

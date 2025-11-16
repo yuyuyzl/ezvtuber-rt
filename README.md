@@ -8,6 +8,9 @@ The primary goal of this project is to provide ONNX models and integrated code f
 
 本项目主旨在为 [EasyVtuber](https://github.com/zpeng11/EasyVtuber) 项目提供onnx模型和模型使用的代码整合，以`Core`核心包装所有功能实现，请参考 [此接口](https://github.com/zpeng11/EasyVtuber/blob/main/ezvtb_rt_interface.py) 创建接口文件使用。欢迎二次开发。
 
+## Install
+Please refer to `INSTALL.md`
+
 ## Minimum Requeirement
 ### Graphic Card
 Most modern discrete gaming level graphic card! AMD RX580 and up, Intel Arc a750 and up, Nvidia GTX1650 and up. (Minimum standard is meet by reaching 25fps debug output after interpolation)
@@ -36,9 +39,9 @@ Currently supporting AMD and Intel GPU by DirectML execution provider of OnnxRun
 A卡和I卡使用OnnxRuntime 提供的DirectML支持，可用但因为Python接口不完善有诸多限制，此实现并非本项目主要实现方向，仅提供入门支持，请自行斟酌。
 
 ### Cache
-Updated cache structure, provide VRAM+RAM solutions for caching results effectively lower down GPU resource comsumption. Use SIMD library TurboJPEG to save space.
+Updated cache structure, provide VRAM+RAM solutions for caching results effectively lower down GPU resource comsumption. Use FFmpeg's HuffYUV codec to save space.
 
-实现显存，内存缓存器，有效减少gpu计算和显存占用。使用SIMD支持的TurboJPEG库实现快速图像压缩解压减少储存压力。
+实现显存，内存缓存器，有效减少gpu计算和显存占用。使用LGPL FFmpeg的HuffYUV实现快速图像压缩解压减少储存压力。
 
 
 ### RIFE

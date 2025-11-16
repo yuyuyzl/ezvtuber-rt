@@ -1,9 +1,6 @@
 import onnx
 import os
-
-current_dir = os.path.dirname(os.path.realpath(__file__))
-DEFAULT_EZVTB_DATA = os.path.join(current_dir, '..','data')
-EZVTB_DATA = os.getenv('EZVTB_DATA', DEFAULT_EZVTB_DATA)
+from ezvtb_rt.common import EZVTB_DATA
 
 def check_exist_all_models():
 
