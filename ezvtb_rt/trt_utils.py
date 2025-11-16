@@ -21,32 +21,28 @@ def cudaSetDevice(device_idx):
         error_string = libcudart.cudaGetErrorString(ret)
         raise RuntimeError("cudaSetDevice: " + str(error_string))
 
-def check_build_all_models(data_dir:str = '') -> bool:
-    all_models_list = check_exist_all_models(data_dir)
+def check_build_all_models():
+    all_models_list = check_exist_all_models()
     #Check TRT support
     print('Start testing if TensorRT works on this machine')
-    try:
-        for fullpath in tqdm(all_models_list):
-            dir, filename = os.path.split(fullpath)
-            trt_filename = filename.split('.')[0] + '.trt'
-            trt_fullpath = os.path.join(dir, trt_filename)
-            if os.path.isfile(trt_fullpath):
-                try:
-                    if load_engine(trt_fullpath) is not None:
-                        continue
-                    else:
-                        print(f'Can not successfully load {trt_fullpath}, build again')
-                except:
+    for fullpath in tqdm(all_models_list):
+        dir, filename = os.path.split(fullpath)
+        trt_filename = filename.split('.')[0] + '.trt'
+        trt_fullpath = os.path.join(dir, trt_filename)
+        if os.path.isfile(trt_fullpath):
+            try:
+                if load_engine(trt_fullpath) is not None:
+                    continue
+                else:
                     print(f'Can not successfully load {trt_fullpath}, build again')
-            dtype = 'fp16' if 'fp16' in fullpath else 'fp32'
-            engine_seri = build_engine(fullpath, dtype)
-            if engine_seri is None:
-                print('Error while building engine')
-                return False
-            save_engine(engine_seri, trt_fullpath)
-    except:
-        return False
-    return True
+            except:
+                print(f'Can not successfully load {trt_fullpath}, build again')
+        dtype = 'fp16' if 'fp16' in fullpath else 'fp32'
+        engine_seri = build_engine(fullpath, dtype)
+        if engine_seri is None:
+            print('Error while building engine')
+            return False
+        save_engine(engine_seri, trt_fullpath)
 
 
 def build_engine(onnx_file_path:str, precision:str):

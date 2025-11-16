@@ -7,7 +7,7 @@ from ezvtb_rt.sr_ort import SRORT
 from ezvtb_rt.common import Core
     
 class CoreORT(Core):
-    def __init__(self, tha_path:Optional[str] = None, rife_path:Optional[str] = None, sr_path:Optional[str] = None, device_id:int = 0, cache_max_volume:float = 2.0, cache_quality:int = 90, use_eyebrow:bool = True):
+    def __init__(self, tha_path:Optional[str] = None, rife_path:Optional[str] = None, sr_path:Optional[str] = None, device_id:int = 0, cache_max_giga:float = 2.0, use_eyebrow:bool = True):
         if device_id == 0:
             self.tha = THAORT(tha_path, use_eyebrow)
         else:
@@ -21,8 +21,8 @@ class CoreORT(Core):
             self.rife = RIFEORT(rife_path, device_id)
         if sr_path is not None:
             self.sr = SRORT(sr_path, device_id)
-        if cache_max_volume > 0.0:
-            self.cacher = Cacher(cache_max_volume, cache_quality)
+        if cache_max_giga > 0.0:
+            self.cacher = Cacher(cache_max_giga)
     def setImage(self, img:np.ndarray):
         self.tha.update_image(img)
     def inference(self, pose:np.ndarray) -> List[np.ndarray]:

@@ -17,10 +17,9 @@ class CoreTRT(Core):
         use_eyebrow: Enable eyebrow motion processing
         rife_dir: Path to RIFE model directory (None to disable)
         sr_dir: Path to SR model directory (None to disable) 
-        cache_max_volume: Max disk cache size (GB)
-        cache_quality: Cache compression quality (1-3)
+        cache_max_giga: Max disk cache size (GB)
     """
-    def __init__(self, tha_dir:str, vram_cache_size:float, use_eyebrow:bool, rife_dir:str, sr_dir:str,  cache_max_volume:float, cache_quality:int = 2):
+    def __init__(self, tha_dir:str, vram_cache_size:float, use_eyebrow:bool, rife_dir:str, sr_dir:str,  cache_max_giga:float):
         # Initialize core THA face model
         self.tha = THA(tha_dir, vram_cache_size, use_eyebrow)
 
@@ -48,8 +47,8 @@ class CoreTRT(Core):
             self.sr = SR(sr_dir, instream, mems)
 
         # Initialize cache if enabled
-        if cache_max_volume > 0.0:
-            self.cacher = Cacher(cache_max_volume, cache_quality)
+        if cache_max_giga > 0.0:
+            self.cacher = Cacher(cache_max_giga)
 
     def setImage(self, img:np.ndarray):
         """Set input image for processing pipeline
