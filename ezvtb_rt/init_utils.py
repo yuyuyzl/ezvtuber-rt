@@ -43,4 +43,12 @@ def check_exist_all_models():
                     raise ValueError('Data is not prepared')
                 onnx.checker.check_model(onnx_file)
                 waifu2x_list.append(onnx_file)
-    return rife_list + tha_list + real_esrgan_list + waifu2x_list
+
+    tha4_list = []
+    for tha4_component in ['body_morpher.onnx', 'combiner.onnx', 'decomposer.onnx', 'morpher.onnx', 'upscaler.onnx']:
+        onnx_file = os.path.join(EZVTB_DATA, 'tha4', tha4_component)
+        if not os.path.isfile(onnx_file):
+            raise ValueError('Data is not prepared')
+        onnx.checker.check_model(onnx_file)
+        tha4_list.append(onnx_file)
+    return rife_list + tha_list + real_esrgan_list + waifu2x_list + tha4_list
