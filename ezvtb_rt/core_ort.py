@@ -18,6 +18,7 @@ class CoreORT(Core):
                  sr_model_scale:int = 2,
                  sr_model_noise:int = 1,
                  sr_model_fp16:bool = False,
+                 vram_cache_size:float = 1.0,  #For compatibility, not used
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
         tha_path = os.path.join(EZVTB_DATA, 'tha3',

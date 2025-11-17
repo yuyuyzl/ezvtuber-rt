@@ -20,6 +20,9 @@ You should be able to find other resource on how to install with VC++ build supp
 Make sure you got FFmpeg and VC++ ready in last section. Clone the repository and install in VS2022+ dev prompt:
 
 ```bash
+set FFMPEG_DIR=C:\Dir\To\FFmpeg
+set EZVTB_DEVICE_ID=0
+set EZVTB_DATA=C:\Dir\To\Model
 git clone https://github.com/zpeng11/ezvtuber-rt.git && cd ezvtuber-rt
 conda install -c nvidia/label/cuda-12.9.1 cuda-toolkit cudnn # You may want to chose a proper version
 pip install tensorrt_cu12_libs==10.11.0.33 tensorrt_cu12_bindings==10.11.0.33 tensorrt==10.11.0.33 --extra-index-url https://pypi.nvidia.com #need to fit with cuda-toolkit version
@@ -37,6 +40,7 @@ pip install -e .
 ### Environment Variables necessary at runtime
 * `set FFMPEG_DIR=C:\Dir\To\FFmpeg` neccesarry
 * `set EZVTB_DEVICE_ID=0` optional to indicate if want to run on non-default GPU
+* `set EZVTB_DATA=C:\Dir\To\Model` optional if want to save model in other location
 ### Using TensorRT (NVIDIA GPUs)
 
 ```python

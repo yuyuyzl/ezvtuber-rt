@@ -4,9 +4,9 @@
 > Inspired and motivated by [THA3](https://github.com/pkhungurn/talking-head-anime-3-demo), [EeasyVtuber](https://github.com/yuyuyzl/EasyVtuber) and [RIFE](https://github.com/hzwer/ECCV2022-RIFE). Rapid implementation powered by Nvidia [TensorRT](https://github.com/NVIDIA/TensorRT) inference framework. Output 4x super-resolution powered by [AnimeVideo-v3 model](https://github.com/xinntao/Real-ESRGAN/blob/master/docs/anime_video_model.md) from [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN), and 2x super-resolution powered by [UpConv7 model](https://github.com/nagadomi/nunif/releases/tag/0.0.0) from [waifu2x project](https://github.com/nagadomi/waifu2x)
 
 ## Purpose
-The primary goal of this project is to provide ONNX models and integrated code for model usage for the [EasyVtuber](https://github.com/zpeng11/EasyVtuber) project. All functionalities are encapsulated within the Core module. Please refer to [interface](https://github.com/zpeng11/EasyVtuber/blob/main/ezvtb_rt_interface.py) to create an interface file for usage. Contributions and further development are welcome.
+The primary goal of this project is to provide ONNX models and integrated code for model usage for the [EasyVtuber](https://github.com/zpeng11/EasyVtuber) project. All functionalities are encapsulated within the Core module. Contributions and further development are welcome.
 
-本项目主旨在为 [EasyVtuber](https://github.com/zpeng11/EasyVtuber) 项目提供onnx模型和模型使用的代码整合，以`Core`核心包装所有功能实现，请参考 [此接口](https://github.com/zpeng11/EasyVtuber/blob/main/ezvtb_rt_interface.py) 创建接口文件使用。欢迎二次开发。
+本项目主旨在为 [EasyVtuber](https://github.com/zpeng11/EasyVtuber) 项目提供onnx模型和模型使用的代码整合，以`Core`核心包装所有功能实现,欢迎二次开发。
 
 ## Install
 Please refer to `INSTALL.md`
