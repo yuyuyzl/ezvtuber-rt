@@ -9,6 +9,7 @@ from ezvtb_rt.common import Core, EZVTB_DATA
     
 class CoreORT(Core):
     def __init__(self,
+                 tha_model_version:str = 'v3',
                  tha_model_seperable:bool = True,
                  tha_model_fp16:bool = False, 
                  rife_model_enable:bool = False,
