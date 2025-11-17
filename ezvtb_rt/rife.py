@@ -1,42 +1,5 @@
 from ezvtb_rt.trt_utils import *
 from ezvtb_rt.engine import Engine, createMemory
-
-class RIFESimple():
-    """Simplified RIFE implementation for performance benchmarking.
-    
-    Provides basic frame interpolation using TensorRT engine with single CUDA stream.
-    Optimized for measuring inference speed rather than production use."""
-    def __init__(self, model_dir):
-        super().__init__(model_dir)
-        # Create CUDA stream for asynchronous operations
-        self.instream = cuda.Stream()  # Primary stream for data transfers and execution
-
-    def run(self, old_frame:np.ndarray, latest_frame:np.ndarray) -> List[np.ndarray]:
-        """Process frames through TensorRT engine.
-        
-        Args:
-            old_frame: Previous frame in NHWC format (batch, height, width, channels)
-            latest_frame: Current frame in same format
-            
-        Returns:
-            List of interpolated frames at different scales"""
-        # Host-to-device memory transfers
-        np.copyto(self.memories['old_frame'].host, old_frame)  # Copy CPU data to pinned host memory
-        self.memories['old_frame'].htod(self.instream)  # Async H->D copy
-        np.copyto(self.memories['latest_frame'].host, latest_frame)
-        self.memories['latest_frame'].htod(self.instream)
-
-        self.engine.exec(self.instream)  # Execute inference on current stream
-
-        # Device-to-host transfers for each scale output
-        for i in range(self.scale):
-            self.memories['framegen_'+str(i)].dtoh(self.instream)  # Async D->H copy
-
-        self.instream.synchronize()  # Wait for all async operations
-        ret = []
-        for i in range(self.scale):  # Collect results for each scale
-            ret.append(self.memories['framegen_'+str(i)].host)  # Access host memory
-        return ret
     
 class RIFE():
     """Production RIFE implementation with pipelined execution.

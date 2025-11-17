@@ -164,3 +164,7 @@ cython_debug/
 
 *.trt
 *.onnx
+*.mp4
+ffmpeg-master-latest-win64-lgpl-shared/
+*.exe
+*.obj
