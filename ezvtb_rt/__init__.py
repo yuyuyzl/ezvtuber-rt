@@ -16,6 +16,18 @@ __version__ = "0.1.0"
 __author__ = "zpeng11"
 __license__ = "MIT"
 
+import os
+EZVTB_DATA = os.path.join(os.path.dirname(__file__),'..', "data")
+def init_model_path(custom_path: str):
+    """Initialize model data path.
+
+    Args:
+        custom_path: Custom path to model data directory.
+    """
+    global EZVTB_DATA
+    EZVTB_DATA = custom_path
+__all__ = ["init_model_path"]
+
 # Import main classes for easy access
 try:
     import os
@@ -24,8 +36,9 @@ try:
     cudaSetDevice(device_id)
     import pycuda.autoinit  # Ensure PyCUDA is initialized for TensorRT
     from ezvtb_rt.core import CoreTRT
-    __all__ = ["CoreTRT"]
+    __all__.append("CoreTRT")
 except ImportError:
+    print("TensorRT or PyCUDA not available, CoreTRT disabled.")
     # TensorRT not available
     __all__ = []
 

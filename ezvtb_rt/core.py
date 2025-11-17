@@ -4,7 +4,8 @@ from ezvtb_rt.tha import THA
 from ezvtb_rt.tha4 import THA4
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.sr import SR
-from ezvtb_rt.common import Core, EZVTB_DATA
+from ezvtb_rt.common import Core
+import ezvtb_rt
 
 class CoreTRT(Core):
     """Main inference pipeline combining THA face model with optional components:
@@ -35,18 +36,18 @@ class CoreTRT(Core):
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
         if tha_model_version == 'v3':
-            tha_path = os.path.join(EZVTB_DATA, 'tha3',
+            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha3',
                                     'seperable' if tha_model_seperable else 'standard', 
                                     'fp16' if tha_model_fp16 else 'fp32')
             self.v3 = True
         elif tha_model_version == 'v4':
-            tha_path = os.path.join(EZVTB_DATA, 'tha4')
+            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4')
             self.v3 = False
         else:
             raise ValueError('Unsupported THA model version')
         rife_path = None
         if rife_model_enable:
-            rife_path = os.path.join(EZVTB_DATA, 'rife_512', 
+            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife_512', 
                                      f'x{rife_model_scale}', 
                                      'fp16' if rife_model_fp16 else 'fp32')
             
@@ -54,14 +55,14 @@ class CoreTRT(Core):
         if sr_model_enable:
             if sr_model_scale == 4:
                 if sr_model_fp16:
-                    sr_path = os.path.join(EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16')
                 else:
-                    sr_path = os.path.join(EZVTB_DATA, 'Real-ESRGAN', 'exported_256')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256')
             else: #x2
                 if sr_model_fp16:
-                    sr_path = os.path.join(EZVTB_DATA, 'waifu2x_upconv', 'fp16', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x_upconv', 'fp16', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
                 else:
-                    sr_path = os.path.join(EZVTB_DATA, 'waifu2x_upconv', 'fp32', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x_upconv', 'fp32', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
 
         # Initialize core THA face model
         if self.v3:

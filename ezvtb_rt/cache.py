@@ -1,8 +1,34 @@
 import numpy as np
 from collections import OrderedDict
 import os
-with os.add_dll_directory(os.path.join(os.environ['FFMPEG_DIR'], 'bin')):
-    import ezvtb_rt.ffmpeg_codec as ffmpeg_codec
+import glob
+
+def find_ffmpeg_from_path():
+    """Scan PATH for FFmpeg bin dir containing key DLLs."""
+    # Key FFmpeg DLLs to check for (adjust if your package uses others)
+    required_dlls = ['avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll']
+    
+    path_dirs = os.environ.get('PATH', '').split(os.pathsep)
+    for dir_path in path_dirs:
+        if not os.path.isdir(dir_path):
+            continue
+        # Check if this dir has the required DLLs
+        has_all_dlls = all(any(os.path.isfile(os.path.join(dir_path, dll))
+                               for dll in glob.glob(os.path.join(dir_path, pattern)))
+                           for pattern in required_dlls)
+        if has_all_dlls:
+            return dir_path
+    return None
+
+# Find and add the dir (if Python 3.8+)
+ffmpeg_dir = find_ffmpeg_from_path()
+if ffmpeg_dir:
+    with os.add_dll_directory(ffmpeg_dir):
+        import ezvtb_rt.ffmpeg_codec as ffmpeg_codec
+    print(f"Added FFmpeg DLL path from PATH: {ffmpeg_dir}")
+else:
+    raise ImportError("FFmpeg DLLs not found in PATH. Ensure FFmpeg bin is added to system PATH.")
+
 
 """
 Cache system with compression and LRU eviction.

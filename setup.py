@@ -9,10 +9,28 @@ from pathlib import Path
 import sys
 import platform
 import os
+import glob
 
 # Read the README file for long description
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
+
+def find_ffmpeg_from_path():
+    """Scan PATH for FFmpeg bin dir containing key DLLs."""
+    # Key FFmpeg DLLs to check for (adjust if your package uses others)
+    required_dlls = ['avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll']
+    
+    path_dirs = os.environ.get('PATH', '').split(os.pathsep)
+    for dir_path in path_dirs:
+        if not os.path.isdir(dir_path):
+            continue
+        # Check if this dir has the required DLLs
+        has_all_dlls = all(any(os.path.isfile(os.path.join(dir_path, dll))
+                               for dll in glob.glob(os.path.join(dir_path, pattern)))
+                           for pattern in required_dlls)
+        if has_all_dlls:
+            return dir_path
+    return None
 
 # Core dependencies required for all installations
 core_dependencies = [
@@ -77,19 +95,14 @@ def get_ffmpeg_codec_extension():
     """Configure the ffmpeg_codec C++ extension with FFmpeg libraries"""
     
     # Check for FFMPEG_DIR environment variable
-    ffmpeg_dir = os.environ.get("FFMPEG_DIR")
-    if not ffmpeg_dir:
+    ffmpeg_bin_dir = find_ffmpeg_from_path()
+    if not ffmpeg_bin_dir:
         raise RuntimeError(
-            "FFMPEG_DIR environment variable is not set. "
-            "Please set FFMPEG_DIR to point to your FFmpeg installation directory. "
-            "Example: set FFMPEG_DIR=C:\\path\\to\\ffmpeg"
+            "FFmpeg DLLs not found in PATH."
+            " Please ensure FFmpeg bin directory is added to your system PATH.\n"
         )
     
-    ffmpeg_path = Path(ffmpeg_dir)
-    if not ffmpeg_path.exists():
-        raise RuntimeError(
-            f"FFMPEG_DIR points to non-existent directory: {ffmpeg_dir}"
-        )
+    ffmpeg_path = Path(ffmpeg_bin_dir).parent
     
     # Get pybind11 include path
     try:

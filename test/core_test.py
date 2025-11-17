@@ -6,6 +6,11 @@ from tqdm import tqdm
 import json
 import cv2
 from typing import List, Tuple
+from ezvtb_rt import init_model_path
+import ezvtb_rt
+
+init_model_path('D:\\EasyVtuber\\data\\models')
+print(ezvtb_rt.EZVTB_DATA)
 
 # Function to generate video
 def generate_video(imgs:List[np.ndarray], video_path:str, framerate:float): #Images should be prepared to be opencv image layout
