@@ -57,7 +57,7 @@ class CoreTHA4TRT(Core):
 
         # Initialize cache if enabled
         if cache_max_volume > 0.0:
-            self.cacher = Cacher(cache_max_volume, cache_quality)
+            self.cacher = Cacher(cache_max_volume, width=512, height=512)
 
     def setImage(self, img: np.ndarray):
         """Set input image for processing pipeline

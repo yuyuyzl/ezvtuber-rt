@@ -41,7 +41,7 @@ class CoreTHA4ORT(Core):
         if sr_path is not None:
             self.sr = SRORT(sr_path, device_id)
         if cache_max_volume > 0.0:
-            self.cacher = Cacher(cache_max_volume, cache_quality)
+            self.cacher = Cacher(cache_max_volume, width=512, height=512)
 
     def setImage(self, img: np.ndarray):
         """Set input character image
