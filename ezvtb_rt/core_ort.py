@@ -5,6 +5,7 @@ from ezvtb_rt.rife_ort import RIFEORT
 from ezvtb_rt.tha_ort import THAORT, THAORTNonDefault
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.sr_ort import SRORT
+from ezvtb_rt.tha4_ort import THA4ORT, THA4ORTNonDefault
 from ezvtb_rt.common import Core
 import ezvtb_rt
 
@@ -23,9 +24,16 @@ class CoreORT(Core):
                  vram_cache_size:float = 1.0,  #For compatibility, not used
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
-        tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha3',
-                                 'seperable' if tha_model_seperable else 'standard', 
-                                 'fp16' if tha_model_fp16 else 'fp32')
+        if tha_model_version == 'v3':
+            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha3',
+                                    'seperable' if tha_model_seperable else 'standard', 
+                                    'fp16' if tha_model_fp16 else 'fp32')
+            
+        elif tha_model_version == 'v4':
+            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4', 
+                                    'fp16' if tha_model_fp16 else 'fp32')
+        else:
+            raise ValueError('Unsupported THA model version')
         rife_path = None
         if rife_model_enable:
             rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife_512', 
@@ -46,11 +54,16 @@ class CoreORT(Core):
                     sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x_upconv', 'fp32', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
         
         device_id = int(os.environ.get('EZVTB_DEVICE_ID', '0'))
-        if device_id == 0:
-            self.tha = THAORT(tha_path, use_eyebrow)
+        if tha_model_version == 'v3':
+            if device_id == 0:
+                self.tha = THAORT(tha_path, use_eyebrow)
+            else:
+                self.tha = THAORTNonDefault(tha_path, device_id, use_eyebrow)
         else:
-            self.tha = THAORTNonDefault(tha_path, device_id, use_eyebrow)
-
+            if device_id == 0:
+                self.tha = THA4ORT(tha_path, use_eyebrow)
+            else:
+                self.tha = THA4ORTNonDefault(tha_path, device_id, use_eyebrow)
         self.rife = None
         self.sr = None
         self.cacher = None
