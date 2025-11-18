@@ -224,7 +224,10 @@ class THA4ORTNonDefault:
             use_eyebrow: Enable eyebrow pose processing
         """
         self.tha4_dir = tha4_dir
-        self.dtype = np.float32
+        if 'fp16' in tha4_dir:
+            self.dtype = np.float16
+        else:
+            self.dtype = np.float32
         
         available = ort.get_available_providers()
         if 'CUDAExecutionProvider' in available:
@@ -282,7 +285,7 @@ class THA4ORTNonDefault:
                 'image_prepared': self.decomposed_results[2],
                 'eyebrow_background_layer': self.decomposed_results[0],
                 'eyebrow_layer': self.decomposed_results[1],
-                'eyebrow_pose': np.zeros((1, 12), dtype=np.float32)
+                'eyebrow_pose': np.zeros((1, 12), dtype=self.dtype)
             })
 
     def inference(self, poses: np.ndarray) -> List[np.ndarray]:
