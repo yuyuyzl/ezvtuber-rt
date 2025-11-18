@@ -41,7 +41,8 @@ class CoreTRT(Core):
                                     'fp16' if tha_model_fp16 else 'fp32')
             self.v3 = True
         elif tha_model_version == 'v4':
-            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4')
+            tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4', 
+                                    'fp16' if tha_model_fp16 else 'fp32')
             self.v3 = False
         else:
             raise ValueError('Unsupported THA model version')

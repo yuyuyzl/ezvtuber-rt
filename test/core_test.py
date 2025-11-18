@@ -9,9 +9,6 @@ from typing import List, Tuple
 from ezvtb_rt import init_model_path
 import ezvtb_rt
 
-init_model_path('D:\\EasyVtuber\\data\\models')
-print(ezvtb_rt.EZVTB_DATA)
-
 # Function to generate video
 def generate_video(imgs:List[np.ndarray], video_path:str, framerate:float): #Images should be prepared to be opencv image layout
 
@@ -30,7 +27,7 @@ def generate_video(imgs:List[np.ndarray], video_path:str, framerate:float): #Ima
     print("Video generated successfully!")
 
 def CorePerf():
-    core = CoreTRT(tha_model_version='v4')
+    core = CoreTRT(tha_model_version='v4', tha_model_fp16=True)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
     cuda.start_profiler()
     with open('./test/data/pose_20fps.json', 'r') as file:
@@ -46,7 +43,7 @@ def CorePerf():
     cuda.stop_profiler()
 
 def CoreShow():
-    core = CoreTRT(tha_model_version='v4', tha_model_seperable=True, tha_model_fp16=True, sr_model_enable=True, sr_model_scale=4, sr_model_fp16=True, rife_model_enable=True, rife_model_scale=4, rife_model_fp16=True)
+    core = CoreTRT(tha_model_version='v4', tha_model_fp16=True)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
 
     with open('./test/data/pose_20fps.json', 'r') as file:
