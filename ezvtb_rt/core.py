@@ -71,6 +71,8 @@ class CoreTRT(Core):
         else:
             self.tha = THA4(tha_path, vram_cache_size, use_eyebrow)
 
+        self.tha_model_fp16 = tha_model_fp16
+
         # Initialize optional components
         self.rife = None  # Frame interpolation module
         self.sr = None    # Super resolution module
@@ -117,6 +119,8 @@ class CoreTRT(Core):
         """
         # Convert pose to required precision
         pose = pose.astype(np.float32)
+        if self.tha_model_fp16 and not self.v3: #For THA4 with FP16 model poses are fp16 inputs
+            pose = pose.astype(np.float16)
 
         # Cache management variables
         need_cache_write = 0  # Hash value if cache needs updating

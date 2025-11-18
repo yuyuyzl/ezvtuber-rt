@@ -28,7 +28,6 @@ class CoreORT(Core):
             tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha3',
                                     'seperable' if tha_model_seperable else 'standard', 
                                     'fp16' if tha_model_fp16 else 'fp32')
-            
         elif tha_model_version == 'v4':
             tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4', 
                                     'fp16' if tha_model_fp16 else 'fp32')
@@ -64,6 +63,8 @@ class CoreORT(Core):
                 self.tha = THA4ORT(tha_path, use_eyebrow)
             else:
                 self.tha = THA4ORTNonDefault(tha_path, device_id, use_eyebrow)
+        self.tha_model_fp16 = tha_model_fp16
+        self.v3 = (tha_model_version == 'v3')
         self.rife = None
         self.sr = None
         self.cacher = None
@@ -78,6 +79,8 @@ class CoreORT(Core):
         self.tha.update_image(img)
     def inference(self, pose:np.ndarray) -> List[np.ndarray]:
         pose = pose.astype(np.float32)
+        if self.tha_model_fp16 and not self.v3: #For THA4 with FP16 model poses are fp16 inputs
+            pose = pose.astype(np.float16)
 
         if self.cacher is None:# Do not use cacher
             res = self.tha.inference(pose)

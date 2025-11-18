@@ -76,7 +76,10 @@ class THA4ORT:
             use_eyebrow: Enable eyebrow pose processing
         """
         self.tha4_dir = tha4_dir
-        self.dtype = np.float32  # THA4 uses fp32 for ONNX
+        if 'fp16' in tha4_dir:
+            self.dtype = np.float16
+        else:
+            self.dtype = np.float32
         
         # Check for available GPU providers
         available = ort.get_available_providers()
@@ -110,7 +113,7 @@ class THA4ORT:
             self.decomposed_eyebrow_layer = ort.OrtValue.ortvalue_from_shape_and_type(
                 (1, 4, 128, 128), self.dtype, self.device)
             self.eyebrow_pose = ort.OrtValue.ortvalue_from_shape_and_type(
-                (1, 12), np.float32, self.device)
+                (1, 12), self.dtype, self.device)
         else:
             self.combiner_eyebrow_image = ort.OrtValue.ortvalue_from_shape_and_type(
                 (1, 4, 192, 192), self.dtype, self.device)
@@ -118,9 +121,9 @@ class THA4ORT:
         self.image_prepared = ort.OrtValue.ortvalue_from_shape_and_type(
             (1, 4, 512, 512), self.dtype, self.device)
         self.face_pose = ort.OrtValue.ortvalue_from_shape_and_type(
-            (1, 27), np.float32, self.device)
+            (1, 27), self.dtype, self.device)
         self.rotation_pose = ort.OrtValue.ortvalue_from_shape_and_type(
-            (1, 6), np.float32, self.device)
+            (1, 6), self.dtype, self.device)
         self.result_image = ort.OrtValue.ortvalue_from_shape_and_type(
             (512, 512, 4), np.uint8, self.device)
         
@@ -180,7 +183,7 @@ class THA4ORT:
                 'image_prepared': decomposed[2],
                 'eyebrow_background_layer': decomposed[0],
                 'eyebrow_layer': decomposed[1],
-                'eyebrow_pose': np.zeros((1, 12), dtype=np.float32)
+                'eyebrow_pose': np.zeros((1, 12), dtype=self.dtype)
             })
             self.combiner_eyebrow_image.update_inplace(combined[0])
 

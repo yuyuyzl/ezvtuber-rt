@@ -27,7 +27,7 @@ def generate_video(imgs:List[np.ndarray], video_path:str, framerate:float): #Ima
     print("Video generated successfully!")
   
 def CoreORTPerf():
-    core = CoreORT(tha_model_version='v4')
+    core = CoreORT(tha_model_version='v4', tha_model_fp16=True, use_eyebrow=True)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
     with open('./test/data/pose_20fps.json', 'r') as file:
         pose_data = json.load(file)
@@ -41,7 +41,7 @@ def CoreORTPerf():
             item.copy()
 
 def CoreORTTestShow():
-    core = CoreORT(tha_model_version='v4', tha_model_fp16=False, use_eyebrow=True)
+    core = CoreORT(tha_model_version='v4', tha_model_fp16=True, use_eyebrow=True)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
     with open('./test/data/pose_20fps.json', 'r') as file:
         pose_data = json.load(file)
@@ -59,7 +59,7 @@ def CoreORTTestShow():
         return new_vid
     
     vid = createInterpolatedVideo(pose_data[800:1000], core)
-    generate_video(vid, './test/data/test.mp4', 80)
+    generate_video(vid, './test/data/test.mp4', 20)
     if core.cacher is not None:
         print(core.cacher.hits, core.cacher.miss)
 
@@ -67,5 +67,5 @@ def CoreORTTestShow():
 
 if __name__ == "__main__":
     # check_exist_all_models()
-    CoreORTPerf()
+    # CoreORTPerf()
     CoreORTTestShow()
