@@ -2,6 +2,7 @@ from ezvtb_rt.trt_utils import *
 from ezvtb_rt.trt_engine import TRTEngine, HostDeviceMem
 from ezvtb_rt.tha3 import THA3Engines
 from ezvtb_rt.tha4 import THA4Engines
+from ezvtb_rt.tha4_student import THA4Student
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.common import Core
 import ezvtb_rt
@@ -54,7 +55,8 @@ class CoreTRT(Core):
     def __init__(self, 
                  tha_model_version:str = 'v3',
                  tha_model_seperable:bool = True,
-                 tha_model_fp16:bool = False, 
+                 tha_model_fp16:bool = False,
+                 tha_model_name:str = None,
                  rife_model_enable:bool = False,
                  rife_model_scale:int = 2,
                  rife_model_fp16:bool = False,
@@ -72,6 +74,22 @@ class CoreTRT(Core):
         elif tha_model_version == 'v4':
             tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4', 
                                     'fp16' if tha_model_fp16 else 'fp32')
+            self.v3 = False
+        elif tha_model_version == 'v4_student':
+            # Support custom student models in data/models/custom_tha4_models
+            if tha_model_name:
+                # Build path relative to project root (parent of ezvtuber-rt)
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.dirname(__file__))
+                )
+                tha_path = os.path.normpath(os.path.join(
+                    project_root, 'data', 'models',
+                    'custom_tha4_models', tha_model_name
+                ))
+            else:
+                tha_path = os.path.join(
+                    ezvtb_rt.EZVTB_DATA, 'tha4_student'
+                )
             self.v3 = False
         else:
             raise ValueError('Unsupported THA model version')
@@ -96,9 +114,12 @@ class CoreTRT(Core):
         # Initialize core THA face model
         if self.v3:
             self.tha = THA3Engines(tha_path, vram_cache_size, use_eyebrow)
-        else:
+        elif tha_model_version == 'v4_student':
+            self.tha = THA4Student(tha_path)
+        elif tha_model_version == 'v4':
             self.tha = THA4Engines(tha_path, vram_cache_size, use_eyebrow)
-            pass
+        else:
+            raise ValueError('Unsupported THA model version')
 
         self.tha_model_fp16: bool = tha_model_fp16
 

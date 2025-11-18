@@ -4,6 +4,7 @@ import os
 from ezvtb_rt.tha3_ort import THA3ORTSessions, THA3ORTNonDefaultSessions
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.tha4_ort import THA4ORTSessions, THA4ORTNonDefaultSessions
+from ezvtb_rt.tha4_student_ort import THA4StudentORT
 from ezvtb_rt.common import Core
 import ezvtb_rt
 import onnxruntime as ort
@@ -24,14 +25,15 @@ class CoreORT(Core):
     def __init__(self,
                  tha_model_version:str = 'v3',
                  tha_model_seperable:bool = True,
-                 tha_model_fp16:bool = False, 
+                 tha_model_fp16:bool = False,
+                 tha_model_name:str = None,
                  rife_model_enable:bool = False,
                  rife_model_scale:int = 2,
                  rife_model_fp16:bool = False,
                  sr_model_enable:bool = False,
                  sr_model_scale:int = 2,
                  sr_model_fp16:bool = False,
-                 vram_cache_size:float = 1.0,  #For compatibility, not used
+                 vram_cache_size:float = 1.0,
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
         if tha_model_version == 'v3':
@@ -41,6 +43,21 @@ class CoreORT(Core):
         elif tha_model_version == 'v4':
             tha_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'tha4', 
                                     'fp16' if tha_model_fp16 else 'fp32')
+        elif tha_model_version == 'v4_student':
+            # Support custom student models in data/models/custom_tha4_models
+            if tha_model_name:
+                # Build path relative to project root (parent of ezvtuber-rt)
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.dirname(__file__))
+                )
+                tha_path = os.path.normpath(os.path.join(
+                    project_root, 'data', 'models',
+                    'custom_tha4_models', tha_model_name
+                ))
+            else:
+                tha_path = os.path.join(
+                    ezvtb_rt.EZVTB_DATA, 'tha4_student'
+                )
         else:
             raise ValueError('Unsupported THA model version')
         rife_path = None
@@ -61,11 +78,15 @@ class CoreORT(Core):
                 self.tha = THA3ORTSessions(tha_path, use_eyebrow)
             else:
                 self.tha = THA3ORTNonDefaultSessions(tha_path, device_id, use_eyebrow)
-        else:
+        elif tha_model_version == 'v4_student':
+            self.tha = THA4StudentORT(tha_path, device_id)
+        elif tha_model_version == 'v4':
             if device_id == 0:
                 self.tha = THA4ORTSessions(tha_path, use_eyebrow)
             else:
                 self.tha = THA4ORTNonDefaultSessions(tha_path, device_id, use_eyebrow)
+        else:
+            raise ValueError('Unsupported THA model version')
         self.tha_model_fp16: bool = tha_model_fp16
         self.v3: bool = (tha_model_version == 'v3')
         self.rife: Optional[ort.InferenceSession] = None
