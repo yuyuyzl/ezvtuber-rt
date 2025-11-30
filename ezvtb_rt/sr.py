@@ -3,55 +3,14 @@ from ezvtb_rt.engine import Engine, createMemory, HostDeviceMem
 import numpy as np
 
 
-class SRSimple():
+class SREngine(TRTEngine):
     """Single-stream super-resolution processor using TensorRT engine."""
     
-    def __init__(self, model_dir):
-        """Initialize CUDA stream, TensorRT engine and memory buffers.
-        
-        Args:
-            model_dir: Path to TensorRT engine file (without .trt extension)
-        """
-        # Create dedicated CUDA stream and load TensorRT engine
-        self.instream = cuda.Stream()
-        self.engine = Engine(model_dir + '.trt', 1)
-        
-        # Allocate input/output memory buffers
-        self.memories = {}
-        self.memories['input'] = createMemory(self.engine.inputs[0])
-        self.memories['output'] = createMemory(self.engine.outputs[0])
-        
-        # Configure engine memory bindings
-        self.engine.setInputMems([self.memories['input']])
-        self.engine.setOutputMems([self.memories['output']])
-        
-        self.returned = True  # Track processing state
+    def __init__(self, model_path:str):
+        super().__init__(model_path, 1)
 
-    def run(self, img:np.ndarray) -> np.ndarray:
-        """Execute super-resolution processing pipeline.
-        
-        Args:
-            img: Input low-resolution image as numpy array
-            
-        Returns:
-            High-resolution output image as numpy array
-        """
-        # Copy input data to host buffer
-        np.copyto(self.memories['input'].host, img)
-        
-        # Transfer input to device memory
-        self.memories['input'].htod(self.instream)
-        
-        # Execute TensorRT inference
-        self.engine.exec(self.instream)
-        
-        # Transfer output back to host memory
-        self.memories['output'].dtoh(self.instream)
-        
-        # Wait for all operations to complete
-        self.instream.synchronize()
-        
-        return self.memories['output'].host
+    def syncInfer(self, np_input:np.ndarray)->np.ndarray:
+        return super().syncInfer([np_input], 1)[0]
     
 class SR():
     """Multi-stream parallel super-resolution processor."""

@@ -4,26 +4,20 @@ from collections import OrderedDict
 
 # THASimple - A basic implementation of THA core using TensorRT
 # Used primarily for benchmarking performance on different platforms
-class THASimple():
-    """A simplified TensorRT-based implementation of the THA core for performance benchmarking
-    
-    Attributes:
-        updatestream (cuda.Stream): CUDA stream for image update operations
-        instream (cuda.Stream): CUDA stream for inference operations
-        outstream (cuda.Stream): CUDA stream for result fetching
-        finishedFetchRes (cuda.Event): CUDA event signaling result fetch completion
-        finishedExec (cuda.Event): CUDA event signaling inference completion
-    """
+class THAEngineSimple():
     def __init__(self, model_dir):
-        """Initialize THASimple with model directory and CUDA resources"""
-        super().__init__(model_dir)
-        # create stream
-        self.updatestream = cuda.Stream()
-        self.instream = cuda.Stream()
-        self.outstream = cuda.Stream()
-        # Create a CUDA events
-        self.finishedFetchRes = cuda.Event()
-        self.finishedExec = cuda.Event()
+        TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.trt'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.trt'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.trt'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.trt'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.trt'), 4)
+        self.decomposer.configure_in_out_tensors()
+        self.combiner.configure_in_out_tensors()
+        self.morpher.configure_in_out_tensors()
+        self.rotator.configure_in_out_tensors()
+        self.editor.configure_in_out_tensors()
+        self.stream = cuda.Stream()
     
     def setImage(self, img:np.ndarray):
         """Set input image and prepare for processing
@@ -33,39 +27,45 @@ class THASimple():
         assert(len(img.shape) == 3 and 
                img.shape[0] == 512 and 
                img.shape[1] == 512 and 
-               img.shape[2] == 4)
-        np.copyto(self.memories['input_img'].host, img)
-        self.memories['input_img'].htod(self.updatestream)
-        self.decomposer.exec(self.updatestream)
-        self.updatestream.synchronize()
+               img.shape[2] == 4   and
+               img.dtype == np.uint8)
+        self.decomposer.syncInfer([img])
+
     def inference(self, pose:np.ndarray) -> np.ndarray:
-        """Run inference pipeline with pose data
-        Args:
-            pose (np.ndarray): Input pose parameters array
-        Returns:
-            np.ndarray: Processed output image from previous inference
-        """
-        
-        self.outstream.wait_for_event(self.finishedExec)
-        self.memories['output_cv_img'].dtoh(self.outstream)
-        self.finishedFetchRes.record(self.outstream)
+        # Put pose data into respective engines
+        eyebrow_pose = pose[:, :12]
+        face_pose = pose[:,12:12+27]
+        rotation_pose = pose[:,12+27:]
+        np.copyto(self.combiner.inputs[3].host, eyebrow_pose)
+        self.combiner.inputs[3].htod(self.stream)
+        np.copyto(self.morpher.inputs[2].host, face_pose)
+        self.morpher.inputs[2].htod(self.stream)
+        np.copyto(self.rotator.inputs[1].host, rotation_pose)
+        self.rotator.inputs[1].htod(self.stream)
+        np.copyto(self.editor.inputs[3].host, rotation_pose)
+        self.editor.inputs[3].htod(self.stream)
 
-        np.copyto(self.memories['eyebrow_pose'].host, pose[:, :12])
-        self.memories['eyebrow_pose'].htod(self.instream)
-        np.copyto(self.memories['face_pose'].host, pose[:,12:12+27])
-        self.memories['face_pose'].htod(self.instream)
-        np.copyto(self.memories['rotation_pose'].host, pose[:,12+27:])
-        self.memories['rotation_pose'].htod(self.instream)
+        self.combiner.inputs[0].bridgeFrom(self.decomposer.outputs[2], self.stream)
+        self.combiner.inputs[1].bridgeFrom(self.decomposer.outputs[0], self.stream)
+        self.combiner.inputs[2].bridgeFrom(self.decomposer.outputs[1], self.stream)
+        self.combiner.syncKickoff(self.stream)
 
-        self.combiner.exec(self.instream)
-        self.morpher.exec(self.instream)
-        self.rotator.exec(self.instream)
-        self.instream.wait_for_event(self.finishedFetchRes)
-        self.editor.exec(self.instream)
-        self.finishedExec.record(self.instream)
-        
-        self.finishedFetchRes.synchronize()
-        return self.memories['output_cv_img'].host
+        self.morpher.inputs[0].bridgeFrom(self.decomposer.outputs[2], self.stream)
+        self.morpher.inputs[1].bridgeFrom(self.combiner.outputs[0], self.stream)
+        self.morpher.inputs[3].bridgeFrom(self.combiner.outputs[1], self.stream)
+        self.morpher.syncKickoff(self.stream)
+
+        self.rotator.inputs[0].bridgeFrom(self.morpher.outputs[1], self.stream)
+        self.rotator.syncKickoff(self.stream)
+
+        self.editor.inputs[0].bridgeFrom(self.morpher.outputs[0], self.stream)
+        self.editor.inputs[1].bridgeFrom(self.rotator.outputs[0], self.stream)
+        self.editor.inputs[2].bridgeFrom(self.rotator.outputs[1], self.stream)
+        self.editor.syncKickoff(self.stream)
+        self.editor.outputs[1].dtoh(self.stream)
+        self.stream.synchronize()
+        return self.editor.outputs[1].host
+
 
 # VRAMMem - Manages allocation and deallocation of GPU memory
 # Wraps CUDA memory allocation with automatic cleanup
@@ -127,6 +127,259 @@ class VRAMCacher(object):
             mem_set = self.cache.popitem(last=False)[1]
         self.cache[hs] = mem_set
         return mem_set
+
+
+class THAEngines():
+    """Optimized THA implementation using TRTEngine with GPU memory caching
+    
+    Attributes:
+        combiner_cacher (VRAMCacher): Cache for eyebrow combination results
+        morpher_cacher (VRAMCacher): Cache for face morphing results
+        streams (cuda.Stream): Dedicated CUDA streams for different operations
+        events (cuda.Event): Synchronization events for pipeline stages
+    """
+    def __init__(self, model_dir, vram_cache_size:float = 1.0, use_eyebrow:bool = True):
+        """Initialize THAEngines with model directory and caching configuration
+        Args:
+            model_dir (str): Directory containing TensorRT engine files
+            vram_cache_size (float): Total GPU memory allocated for caching (in MB)
+            use_eyebrow (bool): Enable eyebrow pose processing
+        """
+        TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.trt'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.trt'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.trt'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.trt'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.trt'), 4)
+        self.decomposer.configure_in_out_tensors()
+        self.combiner.configure_in_out_tensors()
+        self.morpher.configure_in_out_tensors()
+        self.rotator.configure_in_out_tensors()
+        self.editor.configure_in_out_tensors()
+        
+        self.use_eyebrow = use_eyebrow
+        
+        # Setup VRAMCachers using TRTEngine output sizes
+        if use_eyebrow:
+            self.combiner_cacher = VRAMCacher(
+                self.combiner.outputs[0].host.nbytes,  # eyebrow_image
+                self.combiner.outputs[1].host.nbytes,  # morpher_decoded
+                0.1 * vram_cache_size
+            )
+        else:
+            self.combiner_cacher = None
+        
+        self.morpher_cacher = VRAMCacher(
+            self.morpher.outputs[0].host.nbytes,  # face_morphed_full
+            self.morpher.outputs[1].host.nbytes,  # face_morphed_half
+            (0.9 if use_eyebrow else 1.0) * vram_cache_size
+        )
+        
+        # Create CUDA streams
+        self.stream = cuda.Stream()  # Main stream for setImage and inference
+        self.cachestream = cuda.Stream()  # Async cache writes
+        
+        # Create CUDA events for synchronization
+        self.finishedMorpher = cuda.Event()
+        self.finishedCombiner = cuda.Event()
+        self.finishedFetch = cuda.Event()
+    
+    def setImage(self, img:np.ndarray):
+        """Set input image and prepare for processing
+        Args:
+            img (np.ndarray): Input image array (512x512x4 RGBA format)
+        """
+        assert(len(img.shape) == 3 and 
+               img.shape[0] == 512 and 
+               img.shape[1] == 512 and 
+               img.shape[2] == 4 and
+               img.dtype == np.uint8)
+        
+        np.copyto(self.decomposer.inputs[0].host, img)
+        self.decomposer.inputs[0].htod(self.stream)
+        self.decomposer.syncKickoff(self.stream)
+        
+        if not self.use_eyebrow:
+            # Pre-run combiner with zero eyebrow pose when eyebrow is disabled
+            self.combiner.inputs[3].host[:,:] = 0.0
+            self.combiner.inputs[3].htod(self.stream)
+            # Bridge decomposer outputs to combiner inputs
+            self.combiner.inputs[0].bridgeFrom(self.decomposer.outputs[2], self.stream)
+            self.combiner.inputs[1].bridgeFrom(self.decomposer.outputs[0], self.stream)
+            self.combiner.inputs[2].bridgeFrom(self.decomposer.outputs[1], self.stream)
+            self.combiner.syncKickoff(self.stream)
+        
+        self.stream.synchronize()
+
+    def asyncInfer(self, pose:np.ndarray, stream=None):
+        """Execute full inference pipeline with pose data and caching
+        Args:
+            pose (np.ndarray): Combined pose parameters array containing:
+                - eyebrow_pose: First 12 elements
+                - face_pose: Next 27 elements 
+                - rotation_pose: Remaining elements
+            stream: Optional CUDA stream to use. If None, uses self.stream
+        """
+        # Use provided stream or default to self.stream
+        stream = stream if stream is not None else self.stream
+        
+        eyebrow_pose = pose[:, :12]
+        face_pose = pose[:, 12:12+27]
+        rotation_pose = pose[:, 12+27:]
+
+        # Upload rotation pose (always needed)
+        np.copyto(self.rotator.inputs[1].host, rotation_pose)
+        self.rotator.inputs[1].htod(stream)
+        np.copyto(self.editor.inputs[3].host, rotation_pose)
+        self.editor.inputs[3].htod(stream)
+
+        # Compute hashes for cache lookup
+        morpher_hash = hash(str(pose[0, :12+27]))
+        morpher_cached = self.morpher_cacher.read_mem_set(morpher_hash)
+        combiner_hash = hash(str(pose[0, :12]))
+        if self.use_eyebrow:
+            combiner_cached = self.combiner_cacher.read_mem_set(combiner_hash)
+        else:
+            combiner_cached = None
+
+        # Synchronize cache stream before proceeding
+        self.cachestream.synchronize()
+
+        if morpher_cached is not None:
+            # Path 1: Morpher results are cached - skip combiner and morpher
+            cuda.memcpy_dtod_async(
+                self.rotator.inputs[0].device, morpher_cached[1].device,
+                self.rotator.inputs[0].host.nbytes, stream
+            )
+            cuda.memcpy_dtod_async(
+                self.editor.inputs[0].device, morpher_cached[0].device,
+                self.editor.inputs[0].host.nbytes, stream
+            )
+            self.rotator.syncKickoff(stream)
+            # Bridge rotator outputs to editor
+            self.editor.inputs[1].bridgeFrom(self.rotator.outputs[0], stream)
+            self.editor.inputs[2].bridgeFrom(self.rotator.outputs[1], stream)
+            self.editor.syncKickoff(stream)
+
+        elif combiner_cached is not None or not self.use_eyebrow:
+            # Path 2: Combiner results are cached (or eyebrow disabled) - skip combiner only
+            if self.use_eyebrow:
+                # Copy cached combiner outputs to morpher inputs
+                cuda.memcpy_dtod_async(
+                    self.morpher.inputs[1].device, combiner_cached[0].device,
+                    self.morpher.inputs[1].host.nbytes, stream
+                )
+                cuda.memcpy_dtod_async(
+                    self.morpher.inputs[3].device, combiner_cached[1].device,
+                    self.morpher.inputs[3].host.nbytes, stream
+                )
+            else:
+                # Bridge from combiner outputs (pre-computed in setImage)
+                self.morpher.inputs[1].bridgeFrom(self.combiner.outputs[0], stream)
+                self.morpher.inputs[3].bridgeFrom(self.combiner.outputs[1], stream)
+            
+            # Prepare face pose input
+            np.copyto(self.morpher.inputs[2].host, face_pose)
+            self.morpher.inputs[2].htod(stream)
+            
+            # Bridge decomposer output to morpher
+            self.morpher.inputs[0].bridgeFrom(self.decomposer.outputs[2], stream)
+            
+            # Execute morpher
+            self.morpher.syncKickoff(stream)
+            self.finishedMorpher.record(stream)
+            
+            # Execute rotator and editor
+            self.rotator.inputs[0].bridgeFrom(self.morpher.outputs[1], stream)
+            self.rotator.syncKickoff(stream)
+            
+            self.editor.inputs[0].bridgeFrom(self.morpher.outputs[0], stream)
+            self.editor.inputs[1].bridgeFrom(self.rotator.outputs[0], stream)
+            self.editor.inputs[2].bridgeFrom(self.rotator.outputs[1], stream)
+            self.editor.syncKickoff(stream)
+
+            # Cache morpher results asynchronously
+            self.cachestream.wait_for_event(self.finishedMorpher)
+            morpher_cache_write = self.morpher_cacher.write_mem_set(morpher_hash)
+            cuda.memcpy_dtod_async(
+                morpher_cache_write[0].device, self.morpher.outputs[0].device,
+                self.morpher.outputs[0].host.nbytes, self.cachestream
+            )
+            cuda.memcpy_dtod_async(
+                morpher_cache_write[1].device, self.morpher.outputs[1].device,
+                self.morpher.outputs[1].host.nbytes, self.cachestream
+            )
+
+        else:
+            # Path 3: No cache hits - execute full pipeline
+            # Prepare pose inputs
+            np.copyto(self.morpher.inputs[2].host, face_pose)
+            self.morpher.inputs[2].htod(stream)
+            np.copyto(self.combiner.inputs[3].host, eyebrow_pose)
+            self.combiner.inputs[3].htod(stream)
+
+            # Bridge decomposer outputs to combiner
+            self.combiner.inputs[0].bridgeFrom(self.decomposer.outputs[2], stream)
+            self.combiner.inputs[1].bridgeFrom(self.decomposer.outputs[0], stream)
+            self.combiner.inputs[2].bridgeFrom(self.decomposer.outputs[1], stream)
+            
+            # Execute combiner
+            self.combiner.syncKickoff(stream)
+            self.finishedCombiner.record(stream)
+
+            # Bridge to morpher and execute
+            self.morpher.inputs[0].bridgeFrom(self.decomposer.outputs[2], stream)
+            self.morpher.inputs[1].bridgeFrom(self.combiner.outputs[0], stream)
+            self.morpher.inputs[3].bridgeFrom(self.combiner.outputs[1], stream)
+            self.morpher.syncKickoff(stream)
+            self.finishedMorpher.record(stream)
+
+            # Execute rotator and editor
+            self.rotator.inputs[0].bridgeFrom(self.morpher.outputs[1], stream)
+            self.rotator.syncKickoff(stream)
+            
+            self.editor.inputs[0].bridgeFrom(self.morpher.outputs[0], stream)
+            self.editor.inputs[1].bridgeFrom(self.rotator.outputs[0], stream)
+            self.editor.inputs[2].bridgeFrom(self.rotator.outputs[1], stream)
+            self.editor.syncKickoff(stream)
+
+            # Cache combiner results asynchronously
+            self.cachestream.wait_for_event(self.finishedCombiner)
+            combiner_cache_write = self.combiner_cacher.write_mem_set(combiner_hash)
+            cuda.memcpy_dtod_async(
+                combiner_cache_write[0].device, self.combiner.outputs[0].device,
+                self.combiner.outputs[0].host.nbytes, self.cachestream
+            )
+            cuda.memcpy_dtod_async(
+                combiner_cache_write[1].device, self.combiner.outputs[1].device,
+                self.combiner.outputs[1].host.nbytes, self.cachestream
+            )
+
+            # Cache morpher results asynchronously
+            self.cachestream.wait_for_event(self.finishedMorpher)
+            morpher_cache_write = self.morpher_cacher.write_mem_set(morpher_hash)
+            cuda.memcpy_dtod_async(
+                morpher_cache_write[0].device, self.morpher.outputs[0].device,
+                self.morpher.outputs[0].host.nbytes, self.cachestream
+            )
+            cuda.memcpy_dtod_async(
+                morpher_cache_write[1].device, self.morpher.outputs[1].device,
+                self.morpher.outputs[1].host.nbytes, self.cachestream
+            )
+
+        # Fetch output on stream (serial with inference)
+        self.editor.outputs[1].dtoh(stream)
+        self.finishedFetch.record(stream)
+        return self.editor.outputs[1].host
+
+    def syncGetOutput(self) -> np.ndarray:
+        """Retrieve processed results from GPU
+        Returns:
+            np.ndarray: Output image array
+        """
+        self.finishedFetch.synchronize()
+        return self.editor.outputs[1].host
+
 
 class THA():
     """Optimized THA implementation with GPU memory caching

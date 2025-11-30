@@ -1,6 +1,15 @@
 from ezvtb_rt.trt_utils import *
 from ezvtb_rt.engine import Engine, createMemory
     
+class RIFEngine(TRTEngine):
+    """Single-stream RIFE processor using TensorRT engine."""
+    
+    def __init__(self, model_path:str):
+        super().__init__(model_path, 2)
+
+    def syncInfer(self, np_input1:np.ndarray, np_input2:np.ndarray)->np.ndarray:
+        return super().syncInfer([np_input1, np_input2])[0]
+
 class RIFE():
     """Production RIFE implementation with pipelined execution.
     
@@ -14,6 +23,10 @@ class RIFE():
             self.scale = 3  # 3x interpolation
         elif 'x4' in model_dir:
             self.scale = 4  # 4x interpolation
+        elif 'x6' in model_dir:
+            self.scale = 6  # 6x interpolation
+        elif 'x8' in model_dir:
+            self.scale = 8  # 8x interpolation
         else:
             raise ValueError('Model directory must contain x2/x3/x4 to indicate scale')
         TRT_LOGGER.log(TRT_LOGGER.INFO, f'Creating RIFE with scale {self.scale}')  # TensorRT initialization log
