@@ -50,6 +50,7 @@ dependencies = [
     "onnx",
     "onnxruntime-directml",
     "pycuda",
+    "nvidia-nvcomp-cu12",
     "pybind11>=2.6.0"
 ]
 
