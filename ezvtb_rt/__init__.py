@@ -45,5 +45,5 @@ except ImportError:
 from ezvtb_rt.core_ort import CoreORT
 __all__.append("CoreORT")
 
-import ezvtb_rt.rgba_utils
-__all__.append("rgba_utils")
+# Note: C++ extensions (rgba_utils, ffmpeg_codec) are not built by default.
+# They are available in ezvtb_rt/cpp/ for optional manual building if needed.

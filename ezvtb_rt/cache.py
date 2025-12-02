@@ -1,34 +1,6 @@
 import numpy as np
 from collections import OrderedDict
-import os
-import glob
-
-def find_ffmpeg_from_path():
-    """Scan PATH for FFmpeg bin dir containing key DLLs."""
-    # Key FFmpeg DLLs to check for (adjust if your package uses others)
-    required_dlls = ['avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll']
-    
-    path_dirs = os.environ.get('PATH', '').split(os.pathsep)
-    for dir_path in path_dirs:
-        if not os.path.isdir(dir_path):
-            continue
-        # Check if this dir has the required DLLs
-        has_all_dlls = all(any(os.path.isfile(os.path.join(dir_path, dll))
-                               for dll in glob.glob(os.path.join(dir_path, pattern)))
-                           for pattern in required_dlls)
-        if has_all_dlls:
-            return dir_path
-    return None
-
-# Find and add the dir (if Python 3.8+)
-ffmpeg_dir = find_ffmpeg_from_path()
-if ffmpeg_dir:
-    with os.add_dll_directory(ffmpeg_dir):
-        import ezvtb_rt.ffmpeg_codec as ffmpeg_codec
-    print(f"Added FFmpeg DLL path from PATH: {ffmpeg_dir}")
-else:
-    raise ImportError("FFmpeg DLLs not found in PATH. Ensure FFmpeg bin is added to system PATH.")
-
+import brotli
 
 """
 Cache system with compression and LRU eviction.
@@ -59,8 +31,8 @@ class Cacher:
             max_volume_giga: Maximum cache size in gigabytes (default 2.0)
         """
         self.cache = OrderedDict()  # LRU cache storage
-        self.encoder = ffmpeg_codec.HuffYUVEncoderBGRA(width, height)
-        self.decoder = ffmpeg_codec.HuffYUVDecoderBGRA(width, height)
+        self.width = width
+        self.height = height
         
         # Cache size management
         self.max_kbytes = max_volume_giga * 1024 * 1024  # Convert GB to KB
@@ -101,7 +73,7 @@ class Cacher:
             # Promote to MRU position
             self.cache.move_to_end(hs)
             
-            result_img = self.decoder.decode(cached)
+            result_img = np.frombuffer(brotli.decompress(cached), dtype=np.uint8).reshape((self.height, self.width, 4))
             return result_img
         else:
             # Update miss tracking
@@ -121,7 +93,7 @@ class Cacher:
             return
             
         # Compress data
-        compressed = self.encoder.encode(data)
+        compressed = brotli.compress(data.data, quality=0)
         
         # Add to cache and update size tracking
         self.cache[hs] = compressed

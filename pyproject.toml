@@ -2,7 +2,6 @@
 requires = [
     "setuptools>=42",
     "wheel",
-    "pybind11>=2.6.0",
     "numpy>=1.19.0"
 ]
 build-backend = "setuptools.build_meta"
@@ -51,7 +50,7 @@ dependencies = [
     "onnxruntime-directml",
     "pycuda",
     "nvidia-nvcomp-cu12",
-    "pybind11>=2.6.0"
+    "brotli"
 ]
 
 [project.urls]

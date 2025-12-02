@@ -1,9 +1,8 @@
 from ezvtb_rt.trt_utils import *
-from ezvtb_rt.rife import RIFE
-from ezvtb_rt.tha import THA
-from ezvtb_rt.tha4 import THA4
+from ezvtb_rt.trt_engine import TRTEngine, HostDeviceMem
+from ezvtb_rt.tha3 import THA3Engines
+# from ezvtb_rt.tha4 import THA4
 from ezvtb_rt.cache import Cacher
-from ezvtb_rt.sr import SR
 from ezvtb_rt.common import Core
 import ezvtb_rt
 
@@ -30,7 +29,6 @@ class CoreTRT(Core):
                  rife_model_fp16:bool = False,
                  sr_model_enable:bool = False,
                  sr_model_scale:int = 2,
-                 sr_model_noise:int = 1,
                  sr_model_fp16:bool = False,
                  vram_cache_size:float = 1.0, 
                  cache_max_giga:float = 2.0, 
@@ -48,67 +46,61 @@ class CoreTRT(Core):
             raise ValueError('Unsupported THA model version')
         rife_path = None
         if rife_model_enable:
-            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife_512', 
-                                     f'x{rife_model_scale}', 
-                                     'fp16' if rife_model_fp16 else 'fp32')
+            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
+                                     f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
             
         sr_path = None
         if sr_model_enable:
             if sr_model_scale == 4:
                 if sr_model_fp16:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16.trt')
                 else:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp32.trt')
             else: #x2
                 if sr_model_fp16:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x_upconv', 'fp16', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp16.trt')
                 else:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x_upconv', 'fp32', 'upconv_7', 'art', f'noise{sr_model_noise}_scale2x')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp32.trt')
 
         # Initialize core THA face model
         if self.v3:
-            self.tha = THA(tha_path, vram_cache_size, use_eyebrow)
+            self.tha = THA3Engines(tha_path, vram_cache_size, use_eyebrow)
         else:
-            self.tha = THA4(tha_path, vram_cache_size, use_eyebrow)
+            # self.tha = THA4(tha_path, vram_cache_size, use_eyebrow)
+            pass
 
-        self.tha_model_fp16 = tha_model_fp16
+        self.tha_model_fp16: bool = tha_model_fp16
 
         # Initialize optional components
-        self.rife = None  # Frame interpolation module
-        self.sr = None    # Super resolution module
-        self.cacher = None# Output caching system
-        self.scale = 1    # Output scaling factor
+        self.rife: TRTEngine = None  # Frame interpolation module
+        self.sr: TRTEngine = None    # Super resolution module
+        self.cacher_512: Cacher = None# Output caching system
 
         # Initialize RIFE if model path provided
         if rife_path is not None:
-            self.rife = RIFE(rife_path, self.tha.instream, 
-                             self.tha.memories['output_cv_img' if self.v3 else 'cv_result'])
-            self.scale = self.rife.scale
+            self.rife = TRTEngine(rife_path, 2)
+            self.rife.configure_in_out_tensors()
         # Initialize SR if model path provided
         if sr_path is not None:
-            instream = None  # Will be set based on RIFE/THA
-            mems = []        # Memory buffers from previous stage
-            if self.rife is not None:
-                instream = self.rife.instream
-                for i in range(self.rife.scale):
-                    mems.append(self.rife.memories['framegen_'+str(i)])
-            else:
-                instream = self.tha.instream
-                mems.append(self.tha.memories['output_cv_img' if self.v3 else 'cv_result'])
-            self.sr = SR(sr_path, instream, mems)
+            self.sr = TRTEngine(sr_path, 2)
+            self.sr.configure_in_out_tensors(rife_model_scale if rife_model_enable else 1)
 
         # Initialize cache if enabled
         if cache_max_giga > 0.0:
-            self.cacher = Cacher(cache_max_giga)
+            self.cacher_512 = Cacher(cache_max_giga)
+
+        self.main_stream: cuda.Stream = cuda.Stream()
+        self.tha_finished_event: cuda.Event = cuda.Event()
+        self.cache_stream: cuda.Stream = cuda.Stream()
 
     def setImage(self, img:np.ndarray):
         """Set input image for processing pipeline
         Args:
             img: Input image in BGR format (HWC, uint8)
         """
-        self.tha.setImage(img)
+        self.tha.syncSetImage(img)
 
-    def inference(self, pose:np.ndarray) -> List[np.ndarray]:
+    def inference(self, pose:np.ndarray) -> np.ndarray:
         """Run full inference pipeline
         Args:
             pose: Facial pose parameters (45 floats)
@@ -122,43 +114,67 @@ class CoreTRT(Core):
         if self.tha_model_fp16 and not self.v3: #For THA4 with FP16 model poses are fp16 inputs
             pose = pose.astype(np.float16)
 
-        # Cache management variables
-        need_cache_write = 0  # Hash value if cache needs updating
-        res_carrier = None    # Current result container
+        tha_mem_res: HostDeviceMem = self.tha.getOutputMem()
 
         # Cache bypass path
-        if self.cacher is None:
+        if self.cacher_512 is None:
             # Directly run THA inference
-            self.tha.inference(pose)
-            res_carrier = self.tha
-        else:  # Cache enabled path
-            hs = hash(str(pose))  # Create pose hash key
-            cached = self.cacher.read(hs)
+            self.tha.asyncInfer(pose, self.main_stream)
+            if self.rife is not None:
+                cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
+                cuda.memcpy_dtod_async(self.rife.inputs[1].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                self.rife.asyncKickoff(self.main_stream)
+                if self.sr is not None:
+                    cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                    self.sr.asyncKickoff(self.main_stream)
+            elif self.sr is not None: # Directly SR after THA
+                cuda.memcpy_dtod_async(self.sr.inputs[0].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                self.sr.asyncKickoff(self.main_stream)
+        else: # With caching
+            self.cache_stream.synchronize()
+            hs = hash(str(pose))
+            cached_output = self.cacher_512.read(hs)
+            if cached_output is not None: # Cache hit
+                if self.rife is not None:
+                    np.copyto(self.rife.inputs[1].host, cached_output)
+                    cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
+                    self.rife.inputs[1].htod(self.main_stream)
+                    self.rife.asyncKickoff(self.main_stream)
+                    if self.sr is not None:
+                        cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                        self.sr.asyncKickoff(self.main_stream)
+                elif self.sr is not None: # Directly SR after cache
+                    np.copyto(self.sr.inputs[0].host, cached_output)
+                    self.sr.inputs[0].htod(self.main_stream)
+                    self.sr.asyncKickoff(self.main_stream)
+            else: # Cache miss
+                # Run THA inference
+                self.tha.asyncInfer(pose, self.main_stream)
+                self.tha_finished_event.record(self.main_stream)
+                if self.rife is not None:
+                    cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
+                    cuda.memcpy_dtod_async(self.rife.inputs[1].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                    self.rife.asyncKickoff(self.main_stream)
+                    if self.sr is not None:
+                        cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                        self.sr.asyncKickoff(self.main_stream)
+                elif self.sr is not None: # Directly SR after THA
+                    cuda.memcpy_dtod_async(self.sr.inputs[0].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                    self.sr.asyncKickoff(self.main_stream)
+                # Write to cache
+                self.cacher_512.write(hs, tha_mem_res.host)
 
-            if cached is not None:  # Cache hit
-                # Copy cached data to GPU memory
-                np.copyto(self.tha.memories['output_cv_img' if self.v3 else 'cv_result'].host, cached)
-                self.tha.memories['output_cv_img' if self.v3 else 'cv_result'].htod(self.tha.instream)
-                res_carrier = [cached]
-            else:  # Cache miss
-                # Run THA inference and flag for cache storage
-                self.tha.inference(pose)
-                need_cache_write = hs
-                res_carrier = self.tha
-
-        # Run frame interpolation if enabled
-        if self.rife is not None:
-            self.rife.inference()
-            res_carrier = self.rife
-        # Run super resolution if enabled
         if self.sr is not None:
-            self.sr.inference()
-            res_carrier = self.sr
+            self.sr.outputs[0].dtoh(self.main_stream)
+        elif self.rife is not None:
+            self.rife.outputs[0].dtoh(self.main_stream)
+        self.main_stream.synchronize()
 
-        # Update cache if we had a miss
-        if need_cache_write != 0:
-            self.cacher.write(need_cache_write, self.tha.fetchRes()[0])
-
-        if type(res_carrier) is not list:
-            res_carrier = res_carrier.fetchRes()
-        return res_carrier
+        if self.sr is not None:
+            return self.sr.outputs[0].host
+        elif self.rife is not None:
+            return self.rife.outputs[0].host
+        elif self.cacher_512 is not None and cached_output is not None:
+            return np.expand_dims(cached_output, axis=0)
+        else:
+            return np.expand_dims(tha_mem_res.host, axis=0)

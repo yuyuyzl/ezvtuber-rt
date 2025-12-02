@@ -3,7 +3,7 @@ Similar to tha.py but adapted for THA4's 5-model architecture:
 - decomposer, combiner, morpher (face_morpher), body_morpher, upscaler
 """
 from ezvtb_rt.trt_utils import *
-from ezvtb_rt.engine import Engine, createMemory
+from ezvtb_rt.trt_engine import Engine, createMemory
 from collections import OrderedDict
 
 # VRAMMem and VRAMCacher are same as THA3

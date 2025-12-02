@@ -27,7 +27,7 @@ def generate_video(imgs:List[np.ndarray], video_path:str, framerate:float): #Ima
     print("Video generated successfully!")
   
 def CoreORTPerf():
-    core = CoreORT(tha_model_version='v4', tha_model_fp16=True, use_eyebrow=True)
+    core = CoreORT(tha_model_version='v3', tha_model_fp16=False, tha_model_seperable=False, use_eyebrow=False)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
     with open('./test/data/pose_20fps.json', 'r') as file:
         pose_data = json.load(file)
@@ -41,7 +41,7 @@ def CoreORTPerf():
             item.copy()
 
 def CoreORTTestShow():
-    core = CoreORT(tha_model_version='v4', tha_model_fp16=True, use_eyebrow=True)
+    core = CoreORT(tha_model_version='v3', tha_model_fp16=True, use_eyebrow=False, tha_model_seperable=False)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
     with open('./test/data/pose_20fps.json', 'r') as file:
         pose_data = json.load(file)
