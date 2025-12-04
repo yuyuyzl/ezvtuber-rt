@@ -40,7 +40,7 @@ def CorePerf():
     cuda.stop_profiler()
 
 def CoreShow():
-    core = CoreTRT(tha_model_version='v3', tha_model_fp16=True, tha_model_seperable=True, use_eyebrow=True, vram_cache_size=1.0, cache_max_giga=1.0, rife_model_enable=True, rife_model_scale=3)
+    core = CoreTRT(tha_model_version='v3', tha_model_fp16=True, tha_model_seperable=True, use_eyebrow=True, vram_cache_size=1.0, cache_max_giga=1.0, rife_model_enable=True, rife_model_scale=3, sr_model_enable=True, sr_model_scale=2, sr_model_fp16=True)
     core.setImage( cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED))
 
     with open('./test/data/pose_20fps.json', 'r') as file:
@@ -58,8 +58,8 @@ def CoreShow():
                 new_vid.append(outputs[i,:,:,:3].copy())
         return new_vid
     
-    vid = createInterpolatedVideo(pose_data[800:1200], core)
-    generate_video(vid, './test/data/test.mp4', 40)
+    vid = createInterpolatedVideo(pose_data[800:1000], core)
+    generate_video(vid, './test/data/test.mp4', 60)
     if core.cacher_512 is not None:
         print(core.cacher_512.hits, core.cacher_512.miss)
     if core.tha.cacher is not None:

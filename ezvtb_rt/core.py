@@ -6,6 +6,34 @@ from ezvtb_rt.cache import Cacher
 from ezvtb_rt.common import Core
 import ezvtb_rt
 
+def has_none_object_none_pattern(lst):
+    if len(lst) < 3:
+        return False
+    for i in range(len(lst) - 2):
+        if lst[i] is None and lst[i+1] is not None and lst[i+2] is None:
+            return True
+    return False
+
+def find_none_block_indices(lst):
+    if not lst:
+        return None, None  # Empty list: no indices
+    
+    none_indices = [i for i, x in enumerate(lst) if x is None]
+    if not none_indices:
+        return None, None  # No Nones: no block
+    
+    first_none = min(none_indices)
+    last_none = max(none_indices)
+    
+    # Optional: Verify contiguous block (all between first and last are None)
+    if any(lst[i] is not None for i in range(first_none, last_none + 1)):
+        raise ValueError("Nones are not contiguous")
+    
+    i1 = first_none - 1 if first_none > 0 else None  # None if block starts at 0
+    i2 = last_none + 1 if last_none < len(lst) - 1 else None  # None if block ends at last index
+    
+    return i1, i2
+
 class CoreTRT(Core):
     """Main inference pipeline combining THA face model with optional components:
     - RIFE for frame interpolation
@@ -82,7 +110,7 @@ class CoreTRT(Core):
             self.rife.configure_in_out_tensors()
         # Initialize SR if model path provided
         if sr_path is not None:
-            self.sr = TRTEngine(sr_path, 2)
+            self.sr = TRTEngine(sr_path, 1)
             self.sr.configure_in_out_tensors(rife_model_scale if rife_model_enable else 1)
 
         # Initialize cache if enabled
@@ -90,7 +118,6 @@ class CoreTRT(Core):
             self.cacher_512 = Cacher(cache_max_giga)
 
         self.main_stream: cuda.Stream = cuda.Stream()
-        self.tha_finished_event: cuda.Event = cuda.Event()
         self.cache_stream: cuda.Stream = cuda.Stream()
 
     def setImage(self, img:np.ndarray):
@@ -121,15 +148,19 @@ class CoreTRT(Core):
             # Directly run THA inference
             self.tha.asyncInfer(pose, self.main_stream)
             if self.rife is not None:
-                cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
-                cuda.memcpy_dtod_async(self.rife.inputs[1].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                self.rife.inputs[0].bridgeFrom(self.rife.inputs[1], self.main_stream)
+                self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
                 self.rife.asyncKickoff(self.main_stream)
                 if self.sr is not None:
-                    cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                    self.sr.inputs[0].bridgeFrom(self.rife.outputs[0], self.main_stream)
                     self.sr.asyncKickoff(self.main_stream)
+                    self.sr.outputs[0].dtoh(self.main_stream)
+                else:
+                    self.rife.outputs[0].dtoh(self.main_stream)
             elif self.sr is not None: # Directly SR after THA
-                cuda.memcpy_dtod_async(self.sr.inputs[0].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                self.sr.inputs[0].bridgeFrom(tha_mem_res, self.main_stream)
                 self.sr.asyncKickoff(self.main_stream)
+                self.sr.outputs[0].dtoh(self.main_stream)
         else: # With caching
             self.cache_stream.synchronize()
             hs = hash(str(pose))
@@ -137,37 +168,40 @@ class CoreTRT(Core):
             if cached_output is not None: # Cache hit
                 if self.rife is not None:
                     np.copyto(self.rife.inputs[1].host, cached_output)
-                    cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
+                    self.rife.inputs[0].bridgeFrom(self.rife.inputs[1], self.main_stream)
                     self.rife.inputs[1].htod(self.main_stream)
                     self.rife.asyncKickoff(self.main_stream)
                     if self.sr is not None:
-                        cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                        self.sr.inputs[0].bridgeFrom(self.rife.outputs[0], self.main_stream)
                         self.sr.asyncKickoff(self.main_stream)
+                        self.sr.outputs[0].dtoh(self.main_stream)
+                    else:
+                        self.rife.outputs[0].dtoh(self.main_stream)
                 elif self.sr is not None: # Directly SR after cache
                     np.copyto(self.sr.inputs[0].host, cached_output)
                     self.sr.inputs[0].htod(self.main_stream)
                     self.sr.asyncKickoff(self.main_stream)
+                    self.sr.outputs[0].dtoh(self.main_stream)
             else: # Cache miss
                 # Run THA inference
                 self.tha.asyncInfer(pose, self.main_stream)
-                self.tha_finished_event.record(self.main_stream)
                 if self.rife is not None:
-                    cuda.memcpy_dtod_async(self.rife.inputs[0].device, self.rife.inputs[1].device, self.rife.inputs[0].host.nbytes, self.main_stream)
-                    cuda.memcpy_dtod_async(self.rife.inputs[1].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                    self.rife.inputs[0].bridgeFrom(self.rife.inputs[1], self.main_stream)
+                    self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
                     self.rife.asyncKickoff(self.main_stream)
                     if self.sr is not None:
-                        cuda.memcpy_dtod_async(self.sr.inputs[0].device, self.rife.outputs[0].device, self.sr.inputs[0].host.nbytes, self.main_stream)
+                        self.sr.inputs[0].bridgeFrom(self.rife.outputs[0], self.main_stream)
                         self.sr.asyncKickoff(self.main_stream)
+                        self.sr.outputs[0].dtoh(self.main_stream)
+                    else:
+                        self.rife.outputs[0].dtoh(self.main_stream)
                 elif self.sr is not None: # Directly SR after THA
-                    cuda.memcpy_dtod_async(self.sr.inputs[0].device, tha_mem_res.device, tha_mem_res.host.nbytes, self.main_stream)
+                    self.sr.inputs[0].bridgeFrom(tha_mem_res, self.main_stream)
                     self.sr.asyncKickoff(self.main_stream)
+                    self.sr.outputs[0].dtoh(self.main_stream)
                 # Write to cache
                 self.cacher_512.write(hs, tha_mem_res.host)
 
-        if self.sr is not None:
-            self.sr.outputs[0].dtoh(self.main_stream)
-        elif self.rife is not None:
-            self.rife.outputs[0].dtoh(self.main_stream)
         self.main_stream.synchronize()
 
         if self.sr is not None:
