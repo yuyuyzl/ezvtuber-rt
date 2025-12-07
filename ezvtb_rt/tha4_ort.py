@@ -8,61 +8,8 @@ import numpy as np
 from typing import List
 
 
-def merge_graph_tha4(tha4_dir: str, use_eyebrow: bool = True):
-    """Merge THA4 ONNX models into a single graph for optimized execution
-    
-    Args:
-        tha4_dir: Directory containing THA4 ONNX models
-        use_eyebrow: Whether to include eyebrow processing
-    """
-    merge_filename = 'merge.onnx' if use_eyebrow else 'merge_no_eyebrow.onnx'
-    try:
-        onnx.checker.check_model(os.path.join(tha4_dir, merge_filename))
-        return
-    except:
-        pass
-    
-    # Load all THA4 models
-    combiner = onnx.load(os.path.join(tha4_dir, 'combiner.onnx'))
-    combiner = onnx.compose.add_prefix(combiner, 'combiner_')
-    
-    morpher = onnx.load(os.path.join(tha4_dir, 'morpher.onnx'))
-    morpher = onnx.compose.add_prefix(morpher, 'morpher_')
-    
-    body_morpher = onnx.load(os.path.join(tha4_dir, 'body_morpher.onnx'))
-    body_morpher = onnx.compose.add_prefix(body_morpher, 'body_morpher_')
-    
-    upscaler = onnx.load(os.path.join(tha4_dir, 'upscaler.onnx'))
-    upscaler = onnx.compose.add_prefix(upscaler, 'upscaler_')
-    
-    # Merge from back to front
-    # upscaler <- body_morpher
-    merged = onnx.compose.merge_models(
-        body_morpher, upscaler,
-        [
-            ("body_morpher_half_res_posed_image", 'upscaler_half_res_posed_image'),
-            ("body_morpher_half_res_grid_change", 'upscaler_half_res_grid_change')
-        ],
-        outputs=['upscaler_cv_result'])
-    
-    # morpher <- merged (body_morpher + upscaler)
-    merged = onnx.compose.merge_models(
-        morpher, merged,
-        [
-            ('morpher_face_morphed_full', 'upscaler_rest_image'),
-            ('morpher_face_morphed_half', 'body_morpher_face_morphed_half')
-        ])
-    
-    # combiner <- merged (morpher + body_morpher + upscaler)
-    if use_eyebrow:
-        merged = onnx.compose.merge_models(
-            combiner, merged,
-            [('combiner_eyebrow_image', 'morpher_im_morpher_crop')])
-    
-    onnx.save_model(merged, os.path.join(tha4_dir, merge_filename))
 
-
-class THA4ORT:
+class THA4ORTSessions:
     """THA4 ONNX Runtime implementation for default device (device_id=0)
     
     Uses ONNX Runtime with GPU acceleration (CUDA or DirectML) for inference.
@@ -95,9 +42,6 @@ class THA4ORT:
         print('Using THA4 ORT with EP:', self.provider)
         
         self.use_eyebrow = use_eyebrow
-        
-        # Merge graphs for optimized execution
-        merge_graph_tha4(self.tha4_dir, use_eyebrow)
         
         # Session options
         providers = [self.provider]
@@ -187,7 +131,7 @@ class THA4ORT:
             })
             self.combiner_eyebrow_image.update_inplace(combined[0])
 
-    def inference(self, poses: np.ndarray) -> List[np.ndarray]:
+    def inference(self, poses: np.ndarray) -> np.ndarray:
         """Run inference with pose parameters
         
         Args:
@@ -197,8 +141,9 @@ class THA4ORT:
                    [39:45] - rotation pose
                    
         Returns:
-            List containing output image as numpy array
+            Output image as numpy array
         """
+        poses = poses.astype(self.dtype)
         if self.use_eyebrow:
             self.eyebrow_pose.update_inplace(poses[:, :12])
         self.face_pose.update_inplace(poses[:, 12:12+27])
@@ -206,10 +151,10 @@ class THA4ORT:
         
         self.merged.run_with_iobinding(self.binding)
         
-        return [self.result_image.numpy()]
+        return self.result_image.numpy()
 
 
-class THA4ORTNonDefault:
+class THA4ORTNonDefaultSessions:
     """THA4 ONNX Runtime implementation for non-default devices
     
     ORT has limitations with non-default devices and OrtValue, so this
@@ -257,7 +202,6 @@ class THA4ORTNonDefault:
                 sess_options=options,
                 providers=[self.provider])
         
-        merge_graph_tha4(tha4_dir, use_eyebrow)
         merge_filename = 'merge.onnx' if use_eyebrow else 'merge_no_eyebrow.onnx'
         self.merged = ort.InferenceSession(
             os.path.join(tha4_dir, merge_filename),
@@ -288,15 +232,16 @@ class THA4ORTNonDefault:
                 'eyebrow_pose': np.zeros((1, 12), dtype=self.dtype)
             })
 
-    def inference(self, poses: np.ndarray) -> List[np.ndarray]:
+    def inference(self, poses: np.ndarray) -> np.ndarray:
         """Run inference with pose parameters
         
         Args:
             poses: Pose parameters (1, 45)
             
         Returns:
-            List containing output image
+            Output image as numpy array
         """
+        poses = poses.astype(self.dtype)
         eyebrow_pose = poses[:, :12]
         face_pose = poses[:, 12:12+27]
         rotation_pose = poses[:, 12+27:]
@@ -322,4 +267,4 @@ class THA4ORTNonDefault:
             }
         
         result = self.merged.run(None, inputs)
-        return [result[0]]
+        return result[0]
