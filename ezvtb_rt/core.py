@@ -1,7 +1,7 @@
 from ezvtb_rt.trt_utils import *
 from ezvtb_rt.trt_engine import TRTEngine, HostDeviceMem
 from ezvtb_rt.tha3 import THA3Engines
-# from ezvtb_rt.tha4 import THA4
+from ezvtb_rt.tha4 import THA4Engines
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.common import Core
 import ezvtb_rt
@@ -94,7 +94,7 @@ class CoreTRT(Core):
         if self.v3:
             self.tha = THA3Engines(tha_path, vram_cache_size, use_eyebrow)
         else:
-            # self.tha = THA4(tha_path, vram_cache_size, use_eyebrow)
+            self.tha = THA4Engines(tha_path, vram_cache_size, use_eyebrow)
             pass
 
         self.tha_model_fp16: bool = tha_model_fp16
