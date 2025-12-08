@@ -146,14 +146,15 @@ class CoreORT(Core):
                             if sr_results[-1] is None:
                                 to_run_list.append(res[i])
                         # Run SR on frames that missed the cache
-                        sr_inputs = np.stack(to_run_list, axis=0) if len(to_run_list) > 1 else np.expand_dims(to_run_list[0], axis=0)
-                        sr_outputs = self.sr.run(None, {self.sr.get_inputs()[0].name: sr_inputs})[0]
-                        idx = 0
-                        for i in range(len(poses)):
-                            if sr_results[i] is None:
-                                sr_results[i] = sr_outputs[idx]
-                                self.sr_cacher.write(hash(str(poses[i])), sr_outputs[idx])
-                                idx += 1
+                        if len(to_run_list) > 0:
+                            sr_inputs = np.stack(to_run_list, axis=0) if len(to_run_list) > 1 else np.expand_dims(to_run_list[0], axis=0)
+                            sr_outputs = self.sr.run(None, {self.sr.get_inputs()[0].name: sr_inputs})[0]
+                            idx = 0
+                            for i in range(len(poses)):
+                                if sr_results[i] is None:
+                                    sr_results[i] = sr_outputs[idx]
+                                    self.sr_cacher.write(hash(str(poses[i])), sr_outputs[idx])
+                                    idx += 1
                         res = np.stack(sr_results, axis=0)
                     else:
                         raise ValueError('RIFE output length does not match input poses length')

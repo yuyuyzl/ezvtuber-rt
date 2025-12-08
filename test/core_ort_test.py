@@ -1119,6 +1119,67 @@ def CoreORT_ShowVideo_SRCachePerformance():
     generate_video(all_frames, './test/data/core_ort_sr_cache_demo.mp4', 20)
 
 
+def CoreORT_ShowVideo_SRCache_WithRIFE():
+    """Demonstrate SR cache performance when RIFE uses interpolated poses (x3 + waifu2x x2)"""
+    print("=" * 60)
+    print("Demonstrating SR cache with RIFE (interpolated poses)")
+    print("=" * 60)
+
+    core = CoreORT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=3,
+        rife_model_fp16=True,
+        sr_model_enable=True,
+        sr_model_scale=2,
+        sr_model_fp16=True,
+        cache_max_giga=2.0
+    )
+
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+
+    import time
+
+    def run_pass(start_idx: int, count: int) -> Tuple[List[np.ndarray], float]:
+        frames = []
+        t0 = time.time()
+        for i in tqdm(range(count)):
+            base = start_idx + i * 3
+            poses = [
+                np.array(pose_data[base]).reshape(1, 45),
+                np.array(pose_data[base + 1]).reshape(1, 45),
+                np.array(pose_data[base + 2]).reshape(1, 45),
+            ]
+            output = core.inference(poses)
+            for j in range(output.shape[0]):
+                frames.append(output[j, :, :, :3])
+        return frames, time.time() - t0
+
+    print("Pass 1 (SR cache cold, RIFE x3 poses):")
+    frames_pass1, pass1_time = run_pass(800, 200)
+    print(f"Pass 1 time: {pass1_time:.2f}s")
+    print(f"THA cache - Hits: {core.cacher.hits if core.cacher else 0}, Misses: {core.cacher.miss if core.cacher else 0}")
+    print(f"SR cache  - Hits: {core.sr_cacher.hits if core.sr_cacher else 0}, Misses: {core.sr_cacher.miss if core.sr_cacher else 0}")
+
+    print("\nPass 2 (SR cache warm, same poses):")
+    frames_pass2, pass2_time = run_pass(800, 200)
+    print(f"Pass 2 time: {pass2_time:.2f}s")
+    print(f"THA cache - Hits: {core.cacher.hits if core.cacher else 0}, Misses: {core.cacher.miss if core.cacher else 0}")
+    print(f"SR cache  - Hits: {core.sr_cacher.hits if core.sr_cacher else 0}, Misses: {core.sr_cacher.miss if core.sr_cacher else 0}")
+
+    print(f"\nSR+RIFE cache speedup: {pass1_time / pass2_time:.2f}x")
+
+    all_frames = frames_pass1 + frames_pass2
+    generate_video(all_frames, './test/data/core_ort_sr_rife_cache_demo.mp4', 20)
+
+
 def CoreORT_ShowVideo_THA_v4():
     """Generate video with THA v4 model"""
     print("=" * 60)
@@ -1190,6 +1251,8 @@ if __name__ == "__main__":
             CoreORT_ShowVideo_CachePerformance()
         elif sys.argv[1] == '--show-sr-cache':
             CoreORT_ShowVideo_SRCachePerformance()
+        elif sys.argv[1] == '--show-sr-cache-rife':
+            CoreORT_ShowVideo_SRCache_WithRIFE()
         elif sys.argv[1] == '--show-v4':
             CoreORT_ShowVideo_THA_v4()
         else:
