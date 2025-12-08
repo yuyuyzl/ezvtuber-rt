@@ -91,7 +91,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
             cache_max_giga=0.0  # Disable cache for basic test
         )
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         self.assertEqual(output.shape[0], 1)  # Batch size 1
         self.assertEqual(output.shape[1], 512)
@@ -108,7 +108,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
             cache_max_giga=0.0
         )
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         self.assertEqual(output.shape, (1, 512, 512, 4))
     
@@ -122,7 +122,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
             cache_max_giga=0.0
         )
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         self.assertEqual(output.shape, (1, 512, 512, 4))
     
@@ -136,7 +136,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
             cache_max_giga=0.0
         )
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         self.assertEqual(output.shape, (1, 512, 512, 4))
     
@@ -150,7 +150,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
                 cache_max_giga=0.0
             )
             core.setImage(self.test_image)
-            output = core.inference(self.get_pose(800))
+            output = core.inference([self.get_pose(800)])
             self.assertEqual(output.shape, (1, 512, 512, 4))
         except Exception as e:
             self.skipTest(f"THA v4 model not available: {e}")
@@ -165,7 +165,7 @@ class TestCoreORTBasicTHA(TestCoreORTBase):
                 cache_max_giga=0.0
             )
             core.setImage(self.test_image)
-            output = core.inference(self.get_pose(800))
+            output = core.inference([self.get_pose(800)])
             self.assertEqual(output.shape, (1, 512, 512, 4))
         except Exception as e:
             self.skipTest(f"THA v4 model not available: {e}")
@@ -210,13 +210,13 @@ class TestCoreORTCacher(TestCoreORTBase):
         pose = self.get_pose(800)
         
         # First inference - cache miss
-        output1 = core.inference(pose)
+        output1 = core.inference([pose])
         initial_misses = core.cacher.miss
         initial_hits = core.cacher.hits
         
         # Second inference with same pose - cache hit
         # Same pose consecutively resets continues_hits to 0, so hits always work
-        output2 = core.inference(pose)
+        output2 = core.inference([pose])
         
         self.assertEqual(core.cacher.hits, initial_hits + 1)
         self.assertEqual(core.cacher.miss, initial_misses)
@@ -226,7 +226,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         
         # Even more consecutive same-pose hits should work (counter stays at 0)
         for _ in range(10):
-            output = core.inference(pose)
+            output = core.inference([pose])
             np.testing.assert_array_equal(output, output1)
         
         # All should be hits after the initial miss
@@ -247,7 +247,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         # Run with different poses - all first-time accesses
         for i in range(5):
             pose = self.get_pose(800 + i)
-            core.inference(pose)
+            core.inference([pose])
         
         # All should be misses (first access for each pose)
         self.assertEqual(core.cacher.miss, 5)
@@ -267,7 +267,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         # First, populate the cache with 10 different poses
         poses = [self.get_pose(800 + i) for i in range(10)]
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
         
         self.assertEqual(core.cacher.miss, 10)
         self.assertEqual(core.cacher.hits, 0)
@@ -278,7 +278,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         initial_hits = core.cacher.hits
         
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
         
         # Due to anti-thrashing: after 5 hits, continues_hits > 5, so next is forced miss
         # The forced miss resets continues_hits to 0
@@ -301,14 +301,14 @@ class TestCoreORTCacher(TestCoreORTBase):
         pose = self.get_pose(800)
         
         # First access - miss
-        core.inference(pose)
+        core.inference([pose])
         self.assertEqual(core.cacher.miss, 1)
         self.assertEqual(core.cacher.hits, 0)
         
         # Many consecutive accesses to same pose - all should hit
         # because same-key access resets continues_hits to 0
         for _ in range(20):
-            core.inference(pose)
+            core.inference([pose])
         
         # All subsequent accesses should be hits (no anti-thrashing for same key)
         self.assertEqual(core.cacher.miss, 1)
@@ -334,7 +334,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         
         # First pass - all misses
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
         
         first_pass_misses = core.cacher.miss
         first_pass_hits = core.cacher.hits
@@ -345,7 +345,7 @@ class TestCoreORTCacher(TestCoreORTBase):
         # Second pass - due to anti-thrashing, after 5 consecutive hits with different keys,
         # the 6th will be forced to miss. Pattern: 5 hits, 1 miss, 5 hits, 1 miss, etc.
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
         
         # With 20 different poses: hits pattern is 5, miss, 5, miss, 5, miss, 2 (remaining)
         # Expected: 17 hits (5+5+5+2), 3 forced misses in second pass
@@ -378,12 +378,12 @@ class TestCoreORTRIFE(TestCoreORTBase):
         core.setImage(self.test_image)
         
         # First frame
-        output1 = core.inference(self.get_pose(800))
+        output1 = core.inference([self.get_pose(800)])
         # RIFE x2 outputs 2 frames (1 interpolated between previous and current)
         self.assertEqual(output1.shape[0], 2)
         
         # Second frame
-        output2 = core.inference(self.get_pose(801))
+        output2 = core.inference([self.get_pose(801)])
         self.assertEqual(output2.shape[0], 2)
     
     def test_rife_x3_fp16(self):
@@ -401,7 +401,7 @@ class TestCoreORTRIFE(TestCoreORTBase):
         self.assertIsNotNone(core.rife)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         # RIFE x3 outputs 3 frames
         self.assertEqual(output.shape[0], 3)
     
@@ -420,7 +420,7 @@ class TestCoreORTRIFE(TestCoreORTBase):
         self.assertIsNotNone(core.rife)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         # RIFE x4 outputs 4 frames
         self.assertEqual(output.shape[0], 4)
     
@@ -439,8 +439,47 @@ class TestCoreORTRIFE(TestCoreORTBase):
         self.assertIsNotNone(core.rife)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[0], 2)
+
+    def test_rife_x4_multi_pose_with_cache(self):
+        """Multi-pose RIFE x4 interpolation should cache intermediate frames for reuse"""
+        core = CoreORT(
+            tha_model_version='v3',
+            tha_model_seperable=True,
+            tha_model_fp16=True,
+            use_eyebrow=False,
+            rife_model_enable=True,
+            rife_model_scale=4,
+            rife_model_fp16=True,
+            cache_max_giga=1.0
+        )
+
+        core.setImage(self.test_image)
+
+        # Use three interpolation poses plus the sampled pose (len=4 -> x4 session)
+        poses = [
+            self.get_pose(800),
+            self.get_pose(801),
+            self.get_pose(802),
+            self.get_pose(803),
+        ]
+
+        # First run populates cache entries for the interpolation poses
+        output1 = core.inference(poses)
+        self.assertEqual(output1.shape[0], len(poses))
+        first_hits = core.cacher.hits
+        first_miss = core.cacher.miss
+        self.assertEqual(first_hits, 0)
+        self.assertEqual(first_miss, 1)  # final pose lookup misses and is computed
+
+        # Second run should reuse cached interpolation frames (hits for three cached poses)
+        output2 = core.inference(poses)
+        self.assertEqual(output2.shape[0], len(poses))
+        self.assertEqual(core.cacher.hits, first_hits + len(poses))
+        self.assertEqual(core.cacher.miss, first_miss)  # final pose still computed
+
+        np.testing.assert_array_equal(output1, output2)
     
     def test_rife_disabled(self):
         """Test that RIFE is disabled when rife_model_enable=False"""
@@ -457,6 +496,33 @@ class TestCoreORTRIFE(TestCoreORTBase):
 
 class TestCoreORTSuperResolution(TestCoreORTBase):
     """Test CoreORT with Super Resolution models"""
+
+    def test_sr_cache_single_pose_hits(self):
+        """SR cacher should reuse SR results for the same pose (no RIFE)"""
+        core = CoreORT(
+            tha_model_version='v3',
+            tha_model_seperable=True,
+            tha_model_fp16=True,
+            use_eyebrow=False,
+            sr_model_enable=True,
+            sr_model_scale=2,
+            sr_model_fp16=True,
+            cache_max_giga=1.0
+        )
+
+        self.assertIsNotNone(core.sr_cacher)
+
+        core.setImage(self.test_image)
+        pose = self.get_pose(800)
+
+        first = core.inference([pose])
+        self.assertEqual(core.sr_cacher.miss, 1)
+        self.assertEqual(core.sr_cacher.hits, 0)
+
+        second = core.inference([pose])
+        self.assertEqual(core.sr_cacher.hits, 1)
+        self.assertEqual(core.sr_cacher.miss, 1)
+        np.testing.assert_array_equal(first, second)
     
     def test_sr_waifu2x_x2_fp16(self):
         """Test waifu2x x2 FP16 super resolution"""
@@ -473,7 +539,7 @@ class TestCoreORTSuperResolution(TestCoreORTBase):
         self.assertIsNotNone(core.sr)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         # waifu2x x2 should output 1024x1024
         self.assertEqual(output.shape[1], 1024)
@@ -494,7 +560,7 @@ class TestCoreORTSuperResolution(TestCoreORTBase):
         self.assertIsNotNone(core.sr)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         self.assertEqual(output.shape[1], 1024)
         self.assertEqual(output.shape[2], 1024)
@@ -514,7 +580,7 @@ class TestCoreORTSuperResolution(TestCoreORTBase):
         self.assertIsNotNone(core.sr)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         # Real-ESRGAN x4 model also outputs 1024x1024 (x4 is just the model name)
         self.assertEqual(output.shape[1], 1024)
@@ -535,7 +601,7 @@ class TestCoreORTSuperResolution(TestCoreORTBase):
         self.assertIsNotNone(core.sr)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         # Real-ESRGAN x4 model also outputs 1024x1024 (x4 is just the model name)
         self.assertEqual(output.shape[1], 1024)
@@ -576,7 +642,7 @@ class TestCoreORTCombined(TestCoreORTBase):
         self.assertIsNotNone(core.sr)
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         # 2 frames, 1024x1024 each
         self.assertEqual(output.shape[0], 2)
@@ -600,7 +666,7 @@ class TestCoreORTCombined(TestCoreORTBase):
         )
         
         core.setImage(self.test_image)
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         
         # 3 frames, 1024x1024 each (x4 is just model name, all SR outputs 1024x1024)
         self.assertEqual(output.shape[0], 3)
@@ -630,10 +696,47 @@ class TestCoreORTCombined(TestCoreORTBase):
         
         # Note: Cacher only caches THA output, not RIFE/SR output
         pose = self.get_pose(800)
-        output1 = core.inference(pose)
-        output2 = core.inference(pose)
+        output1 = core.inference([pose])
+        output2 = core.inference([pose])
         
         self.assertEqual(output1.shape, output2.shape)
+
+    def test_sr_cacher_with_rife_partial_hits(self):
+        """SR cacher should reuse cached SR frames when RIFE is enabled"""
+        core = CoreORT(
+            tha_model_version='v3',
+            tha_model_seperable=True,
+            tha_model_fp16=True,
+            use_eyebrow=False,
+            rife_model_enable=True,
+            rife_model_scale=2,
+            rife_model_fp16=True,
+            sr_model_enable=True,
+            sr_model_scale=2,
+            sr_model_fp16=True,
+            cache_max_giga=1.0
+        )
+
+        self.assertIsNotNone(core.cacher)
+        self.assertIsNotNone(core.sr_cacher)
+        self.assertIsNotNone(core.rife)
+
+        core.setImage(self.test_image)
+
+        poses_first = [self.get_pose(800), self.get_pose(801)]
+        output1 = core.inference(poses_first)
+        self.assertEqual(output1.shape[0], len(poses_first))
+        sr_hits_after_first = core.sr_cacher.hits
+        sr_miss_after_first = core.sr_cacher.miss
+
+        poses_second = [self.get_pose(800), self.get_pose(802)]
+        output2 = core.inference(poses_second)
+        self.assertEqual(output2.shape[0], len(poses_second))
+
+        # Cached SR frame for pose 800 should be reused; pose 802 should force a miss
+        self.assertGreater(core.sr_cacher.hits, sr_hits_after_first)
+        self.assertGreaterEqual(core.sr_cacher.miss, sr_miss_after_first + 1)
+        np.testing.assert_array_equal(output1[0], output2[0])
 
 
 # ============================================================================
@@ -664,13 +767,13 @@ def CoreORT_ShowVideo_THAOnly():
     print("Pass 1 (cache cold):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
     
     print("Pass 2 (cache warm):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
     
     generate_video(frames, './test/data/core_ort_tha_only.mp4', 20)
@@ -706,7 +809,7 @@ def CoreORT_ShowVideo_WithRIFE_x2():
     print("Generating interpolated frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
     
@@ -744,7 +847,7 @@ def CoreORT_ShowVideo_WithRIFE_x3():
     print("Generating interpolated frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
     
@@ -782,7 +885,7 @@ def CoreORT_ShowVideo_WithRIFE_x4():
     print("Generating interpolated frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
     
@@ -807,7 +910,7 @@ def CoreORT_ShowVideo_WithSR_waifu2x():
         sr_model_enable=True,
         sr_model_scale=2,
         sr_model_fp16=True,
-        cache_max_giga=2.0
+        cache_max_giga=0.0
     )
     
     img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
@@ -820,7 +923,7 @@ def CoreORT_ShowVideo_WithSR_waifu2x():
     print("Generating SR frames (1024x1024):")
     for i in tqdm(range(100)):  # Fewer frames due to larger size
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
     
     generate_video(frames, './test/data/core_ort_sr_waifu2x.mp4', 20)
@@ -856,7 +959,7 @@ def CoreORT_ShowVideo_WithSR_RealESRGAN():
     print("Generating SR frames (1024x1024):")
     for i in tqdm(range(100)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
     
     generate_video(frames, './test/data/core_ort_sr_realesrgan.mp4', 20)
@@ -895,7 +998,7 @@ def CoreORT_ShowVideo_RIFE_x2_SR_waifu2x():
     print("Generating interpolated + SR frames:")
     for i in tqdm(range(100)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
     
@@ -933,7 +1036,7 @@ def CoreORT_ShowVideo_CachePerformance():
     print("Pass 1 (cache cold):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames_pass1.append(output[0, :, :, :3])
     pass1_time = time.time() - start_time
     print(f"Pass 1 time: {pass1_time:.2f}s")
@@ -945,7 +1048,7 @@ def CoreORT_ShowVideo_CachePerformance():
     print("\nPass 2 (cache warm):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames_pass2.append(output[0, :, :, :3])
     pass2_time = time.time() - start_time
     print(f"Pass 2 time: {pass2_time:.2f}s")
@@ -956,6 +1059,64 @@ def CoreORT_ShowVideo_CachePerformance():
     # Combine frames for video
     all_frames = frames_pass1 + frames_pass2
     generate_video(all_frames, './test/data/core_ort_cache_demo.mp4', 20)
+
+
+def CoreORT_ShowVideo_SRCachePerformance():
+    """Demonstrate SR cache performance (waifu2x x2, two passes)"""
+    print("=" * 60)
+    print("Demonstrating SR cache performance")
+    print("=" * 60)
+    
+    core = CoreORT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=3,
+        rife_model_fp16=True,
+        sr_model_enable=True,
+        sr_model_scale=2,
+        sr_model_fp16=True,
+        cache_max_giga=2.0
+    )
+    
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+    
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+    
+    import time
+    
+    frames_pass1 = []
+    start_time = time.time()
+    print("Pass 1 (SR cache cold):")
+    for i in tqdm(range(200)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        frames_pass1.append(output[0, :, :, :3])
+    pass1_time = time.time() - start_time
+    print(f"Pass 1 time: {pass1_time:.2f}s")
+    print(f"THA cache - Hits: {core.cacher.hits if core.cacher else 0}, Misses: {core.cacher.miss if core.cacher else 0}")
+    print(f"SR cache  - Hits: {core.sr_cacher.hits if core.sr_cacher else 0}, Misses: {core.sr_cacher.miss if core.sr_cacher else 0}")
+    
+    frames_pass2 = []
+    start_time = time.time()
+    print("\nPass 2 (SR cache warm):")
+    for i in tqdm(range(200)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        frames_pass2.append(output[0, :, :, :3])
+    pass2_time = time.time() - start_time
+    print(f"Pass 2 time: {pass2_time:.2f}s")
+    print(f"THA cache - Hits: {core.cacher.hits if core.cacher else 0}, Misses: {core.cacher.miss if core.cacher else 0}")
+    print(f"SR cache  - Hits: {core.sr_cacher.hits if core.sr_cacher else 0}, Misses: {core.sr_cacher.miss if core.sr_cacher else 0}")
+    
+    print(f"\nSR cache speedup: {pass1_time / pass2_time:.2f}x")
+    
+    all_frames = frames_pass1 + frames_pass2
+    generate_video(all_frames, './test/data/core_ort_sr_cache_demo.mp4', 20)
 
 
 def CoreORT_ShowVideo_THA_v4():
@@ -985,7 +1146,11 @@ def CoreORT_ShowVideo_THA_v4():
     print("Generating THA v4 frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
+        frames.append(output[0, :, :, :3])
+    for i in tqdm(range(200)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
     
     generate_video(frames, './test/data/core_ort_tha_v4.mp4', 20)
@@ -1008,6 +1173,7 @@ if __name__ == "__main__":
             CoreORT_ShowVideo_WithSR_RealESRGAN()
             CoreORT_ShowVideo_RIFE_x2_SR_waifu2x()
             CoreORT_ShowVideo_CachePerformance()
+            CoreORT_ShowVideo_SRCachePerformance()
             CoreORT_ShowVideo_THA_v4()
         elif sys.argv[1] == '--show-tha':
             CoreORT_ShowVideo_THAOnly()
@@ -1022,6 +1188,8 @@ if __name__ == "__main__":
             CoreORT_ShowVideo_RIFE_x2_SR_waifu2x()
         elif sys.argv[1] == '--show-cache':
             CoreORT_ShowVideo_CachePerformance()
+        elif sys.argv[1] == '--show-sr-cache':
+            CoreORT_ShowVideo_SRCachePerformance()
         elif sys.argv[1] == '--show-v4':
             CoreORT_ShowVideo_THA_v4()
         else:

@@ -1,6 +1,7 @@
 import numpy as np
 from collections import OrderedDict
 import brotli
+from typing import Optional
 
 """
 Cache system with compression and LRU eviction.
@@ -45,8 +46,40 @@ class Cacher:
         # Cache state tracking
         self.continues_hits = 0  # Sequential hit counter
         self.last_hs = -1  # Last accessed hash key
+
+    def query(self, hs:int) -> bool:
+        """Check if a hash key exists in the cache.
+        
+        Args:
+            hs: Hash key to query
+        Returns:
+            bool: True if key exists, False otherwise
+        """
+        is_in = hs in self.cache
+        if is_in:
+            self.cache.move_to_end(hs)  # Update LRU position
+        return is_in
+    
+    def get(self, hs:int) -> Optional[np.ndarray]:
+        """Retrieve cached data by hash key without anti-thrashing.
+        
+        Args:
+            hs: Hash key of requested data
+        Returns:
+            np.ndarray: Decompressed image data or None if miss
+        """
+        cached = self.cache.get(hs)
+        if cached is not None:
+            self.hits += 1
+            self.cache.move_to_end(hs)
+            result_img = np.frombuffer(brotli.decompress(cached), dtype=np.uint8).reshape((self.height, self.width, 4))
+            return result_img
+        else:
+            self.miss += 1
+            return None
+
     def read(self, hs:int) -> np.ndarray:
-        """Retrieve cached data by hash key.
+        """Retrieve cached data by hash key. Will use anti-thrashing.
         
         Args:
             hs: Hash key of requested data
