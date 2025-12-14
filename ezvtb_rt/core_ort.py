@@ -95,80 +95,77 @@ class CoreORT(Core):
             if self.tha_model_fp16 and not self.v3: #For THA4 with FP16 model poses are fp16 inputs
                 poses[i] = poses[i].astype(np.float16)
 
-        if self.cacher is None:# Do not use cacher
+        tha_result: np.ndarray = self.cacher.read(hash(str(poses[-1]))) if self.cacher is not None else None
+        if tha_result is None:# Do not use cacher or cache missed
             tha_result = self.tha.inference(poses[-1])
-        else:
-            #use cacher 
-            hs = hash(str(poses[-1]))
-            cached = self.cacher.read(hs)
-
-            if cached is not None:# Cache hits
-                tha_result = cached
-            else: #cache missed
-                tha_result = self.tha.inference(poses[-1])
-                self.cacher.write(hs, tha_result)
+            if self.cacher is not None:
+                self.cacher.write(hash(str(poses[-1])), tha_result)
 
         if not self.rife and not self.sr: # Only THA
             return np.expand_dims(tha_result, axis=0)
 
-        if self.rife is not None: # RIFE + (SR)
+        rife_result: np.ndarray = None
+        if self.rife is not None: # RIFE
             self.rife = self.rifes[len(poses)-2] if len(poses) > 1 and len(poses)-2 < len(self.rifes) else self.rife
             all_cached: bool = len(poses) > 1 and self.cacher is not None and all(self.cacher.query(hash(str(pose))) for pose in poses[:-1])
             if all_cached:
-                results = [self.cacher.get(hash(str(pose))) for pose in poses[:-1]] + [tha_result]
-                res = np.stack(results, axis=0)
+                all_cached_images = [self.cacher.get(hash(str(pose))) for pose in poses[:-1]] + [tha_result]
+                rife_result = np.stack(all_cached_images, axis=0)
             else:
-                res = self.rife.run(None, {'tha_img_0': self.last_tha_output, 'tha_img_1': tha_result})[0]
-                if len(poses) > 1 and self.cacher is not None and len(poses) == len(res):
+                rife_result = self.rife.run(None, {'tha_img_0': self.last_tha_output, 'tha_img_1': tha_result})[0]
+                if len(poses) > 1 and self.cacher is not None and len(poses) == len(rife_result):
                     for i in range(len(poses)-1):
-                        self.cacher.write(hash(str(poses[i])), res[i])
+                        self.cacher.write(hash(str(poses[i])), rife_result[i])
             self.last_tha_output = tha_result
-            if self.sr is not None: # SR after RIFE
-                if self.sr_cacher is not None: # Use SR cacher
-                    if len(poses) == 1: #single pose input
-                        hs = hash(str(poses[0]))
-                        cached_sr = self.sr_cacher.get(hs)
-                        if cached_sr is not None: #SR cache hit
-                            if res.shape[0] > 1: #Multiple frames rife output
-                                additional_sr = self.sr.run(None, {self.sr.get_inputs()[0].name: res[:-1]})[0]
-                                res = np.concatenate([np.expand_dims(cached_sr, axis=0), additional_sr], axis=0)
-                            else: #Single frame rife output
-                                res = np.expand_dims(cached_sr, axis=0)
-                        else: #SR cache miss
-                            res = self.sr.run(None, {self.sr.get_inputs()[0].name: res})[0]
-                            self.sr_cacher.write(hs, res[0])
-                    elif len(poses) == res.shape[0]: #interpolated poses are provided
-                        sr_results = []
-                        to_run_list = []
-                        for i in range(len(poses)): #check cache for each rife frame
-                            hs = hash(str(poses[i]))
-                            sr_results.append(self.sr_cacher.get(hs))
-                            if sr_results[-1] is None:
-                                to_run_list.append(res[i])
-                        # Run SR on frames that missed the cache
-                        if len(to_run_list) > 0:
-                            sr_inputs = np.stack(to_run_list, axis=0) if len(to_run_list) > 1 else np.expand_dims(to_run_list[0], axis=0)
-                            sr_outputs = self.sr.run(None, {self.sr.get_inputs()[0].name: sr_inputs})[0]
-                            idx = 0
-                            for i in range(len(poses)):
-                                if sr_results[i] is None:
-                                    sr_results[i] = sr_outputs[idx]
-                                    self.sr_cacher.write(hash(str(poses[i])), sr_outputs[idx])
-                                    idx += 1
-                        res = np.stack(sr_results, axis=0)
-                    else:
-                        raise ValueError('RIFE output length does not match input poses length')
-                else:
-                    res = self.sr.run(None, {self.sr.get_inputs()[0].name: res})[0]
-            return res
-        
-        # Only SR
-        hs = hash(str(poses[-1]))
-        cached_sr = self.sr_cacher.read(hs) if self.sr_cacher is not None else None
-        if cached_sr is not None:
-            return np.expand_dims(cached_sr, axis=0)
         else:
-            sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: np.expand_dims(tha_result, axis=0)})[0]
-            if self.sr_cacher is not None:
-                self.sr_cacher.write(hs, sr_result[0])
-            return sr_result
+            rife_result = np.expand_dims(tha_result, axis=0)
+
+        if not self.sr:  # Only RIFE
+            return rife_result
+        
+        # SR
+        if len(poses) == 1: # Only one pose provided, 
+            print("Single pose SR processing")
+            hs = hash(str(poses[-1]))
+            cached_sr = self.sr_cacher.read(hs) if self.sr_cacher is not None else None
+            sr_batch = rife_result.shape[0]  if cached_sr is None else rife_result.shape[0] - 1
+            if sr_batch > 0: #Need to run SR on some frames
+                sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: rife_result[:sr_batch]})[0]
+                if self.sr_cacher is not None and cached_sr is None:
+                    self.sr_cacher.write(hs, sr_result[-1])
+                elif cached_sr is not None:
+                    sr_result = np.concatenate([sr_result, np.expand_dims(cached_sr, axis=0)], axis=0)
+            else: # The only frame is cached
+                sr_result =  np.expand_dims(cached_sr, axis=0)
+        else:
+            assert len(poses) == rife_result.shape[0]
+            all_cached: bool = self.sr_cacher is not None and all(self.sr_cacher.query(hash(str(pose))) for pose in poses)
+            if all_cached:
+                sr_result = np.stack([self.sr_cacher.get(hash(str(pose))) for pose in poses], axis=0)
+            else:
+                if self.sr_cacher is None:
+                    sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: rife_result})[0]
+                else:
+                    sr_result = []
+                    to_sr_images = []
+                    for i in range(len(poses)):
+                        hs = hash(str(poses[i]))
+                        cached_sr = self.sr_cacher.read(hs)
+                        if cached_sr is None:
+                            to_sr_images.append(rife_result[i])
+                            sr_result.append(None)  # Placeholder
+                        else:
+                            sr_result.append(cached_sr)
+                    assert len(to_sr_images) > 0
+                    to_sr_images_np = np.stack(to_sr_images, axis=0)
+                    sr_outputs = self.sr.run(None, {self.sr.get_inputs()[0].name: to_sr_images_np})[0]
+                    sr_idx = 0
+                    for i in range(len(poses)):
+                        if sr_result[i] is None:
+                            sr_result[i] = sr_outputs[sr_idx]
+                            hs = hash(str(poses[i]))
+                            self.sr_cacher.write(hs, sr_outputs[sr_idx])
+                            sr_idx += 1
+                    sr_result = np.stack(sr_result, axis=0)
+
+        return sr_result
