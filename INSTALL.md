@@ -46,7 +46,7 @@ core = CoreTRT()
 core.setImage(cv2_bgra_image)
 # Use the core for inference
 while True:
-    pose: np.ndarray = np.array(get_from_current_sensor_collect()).astype(np.float32).reshape((1,45)) #Get pose from sensor
+    pose: np.ndarray = np.array(get_pose()).astype(np.float32).reshape((1,45)) #Get pose from sensor
     results: np.ndarray = core.inference([pose])
     #This results is a (N, H, W, 4) BGRA image, display or port to streaming
 
@@ -72,34 +72,125 @@ core = CoreTRT()
 core.setImage(cv2_bgra_image)
 # Use the core for inference
 while True:
-    pose: np.ndarray = np.array(get_from_current_sensor_collect()).astype(np.float32).reshape((1,45)) #Get pose from sensor
+    pose: np.ndarray = np.array(get_pose()).astype(np.float32).reshape((1,45)) #Get pose from sensor
     results: np.ndarray = core.inference(pose)
     #This results is a (N, H, W, 4) BGRA image, display or port to streaming
 ```
 
 
 
+## Feature-focused examples
 
-### Using interpolation
+The snippets below mirror the cases covered in the automated tests (see `test/core_test.py`) and show how to enable specific features one at a time or in combination.
+
+### THA-only (default path)
 ```python
-from ezvtb_rt import CoreORT
-from ezvtb_rt import init_model_path
+import cv2
+import numpy as np
+from ezvtb_rt import CoreTRT, init_model_path
 
-# Initialize the model path
 init_model_path('C:/Path/To/Model/Folder')
+core = CoreTRT(tha_model_version='v3', tha_model_seperable=True, tha_model_fp16=True, cache_max_giga=2.0)
 
-# Initialize the core with TensorRT backend
-core = CoreTRT(rife_model_enable = True, rife_model_scale = 3)
+img = cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED)
+core.setImage(img)
 
-#setup input image
-core.setImage(cv2_bgra_image)
-# Use the core for inference
-while True:
-    pose0: np.ndarray = get_from_last_sensor_collect() #design you own way to get this from last run
-    pose1: np.ndarray = np.array(get_from_current_sensor_collect()).astype(np.float32).reshape((1,45)) #Get current pose from sensor
-    pose_0_33: np.ndarray = pose0 + (pose0 + pose1)/3  # Pose interpolation on 1/3
-    pose_0_66: np.ndarray = pose0 + 2*(pose0 + pose1)/3 # Pose interpolation on 2/3
+pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+frame:np.ndarray = core.inference([pose])  # (1, 512, 512, 4)
+```
+
+### THA v4
+```python
+core = CoreTRT(tha_model_version='v4', tha_model_fp16=True, cache_max_giga=0.0)
+core.setImage(cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED))
+pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+frame = core.inference([pose])  # same shape as v3, higher-quality models
+```
+
+### RIFE interpolation
+```python
+core = CoreTRT(
+    tha_model_version='v3',
+    tha_model_seperable=True,
+    tha_model_fp16=True,
+    rife_model_enable=True,
+    rife_model_scale=3,
+    rife_model_fp16=True,
+    cache_max_giga=2.0,
+)
+core.setImage(cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED))
+
+prev_pose = None
+while True:  # processing loop
+    curr_pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+    if prev_pose is None:
+        prev_pose = curr_pose
+    pose_0_33 = prev_pose + (prev_pose + curr_pose)/3  # Pose interpolation on 1/3
+    pose_0_66 = prev_pose + 2*(prev_pose + curr_pose)/3 # Pose interpolation on 2/3
     #You may need to qunatize poses for simplification in order to hit catch of poses.
-    results: np.ndarray = core.inference([pose_0_33, pose_0_66, pose1])
-    #This results is a (3, 512, 512, 4) BGRA image, display or port to streaming
+    frames: np.ndarray = core.inference([pose_0_33, pose_0_66, curr_pose])  # shape: (3, 512, 512, 4)
+    prev_pose = curr_pose
+    #Timing control here
+```
+
+### Super resolution (SR)
+```python
+core = CoreTRT(
+    tha_model_version='v3',
+    tha_model_seperable=True,
+    tha_model_fp16=True,
+    sr_model_enable=True,
+    sr_model_scale=2,  # use 4 for Real-ESRGAN x4
+    sr_model_fp16=True,
+    cache_max_giga=2.0,
+)
+core.setImage(cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED))
+
+pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+sr_frame: np.ndarray = core.inference([pose])  # shape: (1, 1024, 1024, 4) for x2
+```
+
+### Adjust Caching (reuse same pose)
+```python
+core = CoreTRT(
+    tha_model_version='v3',
+    tha_model_seperable=True,
+    tha_model_fp16=True,
+    vram_cache_size = 1.0, #Enable vram cache, this actually stores in gpu mapped RAM instead of vram
+    cache_max_giga=1.0,  # enable cpu cache
+)
+core.setImage(cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED))
+
+pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+# It is necessary for the user of the library to quantize poses to hit caches
+first: np.ndarray = core.inference([pose])
+second: np.ndarray = core.inference([pose])
+print(f"hits={core.cacher.hits}, miss={core.cacher.miss}")
+```
+
+### Combined RIFE + SR
+```python
+core = CoreTRT(
+    tha_model_version='v3',
+    tha_model_seperable=True,
+    tha_model_fp16=True,
+    rife_model_enable=True,
+    rife_model_scale=2,
+    rife_model_fp16=True,
+    sr_model_enable=True,
+    sr_model_scale=4,
+    sr_model_fp16=True,
+    cache_max_giga=2.0,
+)
+core.setImage(cv2.imread('path/to/base.png', cv2.IMREAD_UNCHANGED))
+
+prev_pose = None
+while True:  # processing loop
+    curr_pose = np.array(get_pose()).astype(np.float32).reshape((1, 45))
+    if prev_pose is None:
+        prev_pose = curr_pose
+    pose_0_5 = prev_pose + (prev_pose + curr_pose)/2
+    #You may need to qunatize poses for simplification in order to hit catch of poses.
+    frames: np.ndarray = core.inference([prev_pose, curr_pose])  # shape: (2, 1024, 1024, 4)
+    prev_pose = curr_pose
 ```
