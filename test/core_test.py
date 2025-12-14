@@ -72,25 +72,25 @@ class TestCoreTRTCache(TestCoreTRTBase):
 
     def test_cache_disabled(self):
         core = self.make_core(cache_max_giga=0.0)
-        self.assertIsNone(core.cacher_512)
+        self.assertIsNone(core.cacher)
 
     def test_cache_enabled(self):
         core = self.make_core(cache_max_giga=1.0)
-        self.assertIsNotNone(core.cacher_512)
+        self.assertIsNotNone(core.cacher)
 
     def test_cache_hits_same_pose(self):
         core = self.make_core(cache_max_giga=1.0)
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        out1 = core.inference(pose)
-        misses = core.cacher_512.miss
-        hits = core.cacher_512.hits
+        out1 = core.inference([pose])
+        misses = core.cacher.miss
+        hits = core.cacher.hits
 
-        out2 = core.inference(pose)
+        out2 = core.inference([pose])
 
-        self.assertEqual(core.cacher_512.hits, hits + 1)
-        self.assertEqual(core.cacher_512.miss, misses)
+        self.assertEqual(core.cacher.hits, hits + 1)
+        self.assertEqual(core.cacher.miss, misses)
         self.assertEqual(out1.shape, (1, 512, 512, 4))
         np.testing.assert_array_equal(out1, out2)
 
@@ -99,10 +99,10 @@ class TestCoreTRTCache(TestCoreTRTBase):
         core.setImage(self.test_image)
 
         for i in range(3):
-            core.inference(self.get_pose(800 + i))
+            core.inference([self.get_pose(800 + i)])
 
-        self.assertEqual(core.cacher_512.miss, 3)
-        self.assertEqual(core.cacher_512.hits, 0)
+        self.assertEqual(core.cacher.miss, 3)
+        self.assertEqual(core.cacher.hits, 0)
 
     def test_cache_anti_thrashing_for_different_keys(self):
         core = self.make_core(cache_max_giga=1.0)
@@ -110,28 +110,28 @@ class TestCoreTRTCache(TestCoreTRTBase):
 
         poses: List[np.ndarray] = [self.get_pose(800 + i) for i in range(8)]
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
 
-        initial_misses = core.cacher_512.miss
+        initial_misses = core.cacher.miss
 
         for pose in poses:
-            core.inference(pose)
+            core.inference([pose])
 
-        self.assertGreater(core.cacher_512.hits, 0)
-        self.assertGreater(core.cacher_512.miss, initial_misses)
+        self.assertGreater(core.cacher.hits, 0)
+        self.assertGreater(core.cacher.miss, initial_misses)
 
     def test_cache_same_key_resets_counter(self):
         core = self.make_core(cache_max_giga=1.0)
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        core.inference(pose)
+        core.inference([pose])
 
         for _ in range(5):
-            core.inference(pose)
+            core.inference([pose])
 
-        self.assertEqual(core.cacher_512.miss, 1)
-        self.assertEqual(core.cacher_512.hits, 5)
+        self.assertEqual(core.cacher.miss, 1)
+        self.assertEqual(core.cacher.hits, 5)
 
 
 class TestCoreTRTBasicTHA4(TestCoreTRTBase):
@@ -140,13 +140,13 @@ class TestCoreTRTBasicTHA4(TestCoreTRTBase):
     def test_tha_v4_fp16_no_cache(self):
         core = self.make_core(version='v4', tha_model_fp16=True, cache_max_giga=0.0)
         core.setImage(self.test_image)
-        out = core.inference(self.get_pose(800))
+        out = core.inference([self.get_pose(800)])
         self.assertEqual(out.shape, (1, 512, 512, 4))
 
     def test_tha_v4_fp32_no_cache(self):
         core = self.make_core(version='v4', tha_model_fp16=False, cache_max_giga=0.0)
         core.setImage(self.test_image)
-        out = core.inference(self.get_pose(800))
+        out = core.inference([self.get_pose(800)])
         self.assertEqual(out.shape, (1, 512, 512, 4))
 
     def test_tha_v4_with_cache_hits(self):
@@ -154,15 +154,15 @@ class TestCoreTRTBasicTHA4(TestCoreTRTBase):
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        out1 = core.inference(pose)
-        hits = core.cacher_512.hits
-        misses = core.cacher_512.miss
+        out1 = core.inference([pose])
+        hits = core.cacher.hits
+        misses = core.cacher.miss
 
-        out2 = core.inference(pose)
+        out2 = core.inference([pose])
 
         self.assertEqual(out1.shape, out2.shape)
-        self.assertEqual(core.cacher_512.hits, hits + 1)
-        self.assertEqual(core.cacher_512.miss, misses)
+        self.assertEqual(core.cacher.hits, hits + 1)
+        self.assertEqual(core.cacher.miss, misses)
 
 
 class TestCoreTRTRife(TestCoreTRTBase):
@@ -177,7 +177,7 @@ class TestCoreTRTRife(TestCoreTRTBase):
         self.assertIsNotNone(core.rife)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[0], 2)
 
     def test_rife_x3_fp16(self):
@@ -185,7 +185,7 @@ class TestCoreTRTRife(TestCoreTRTBase):
         self.assertIsNotNone(core.rife)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[0], 3)
 
     def test_rife_cache_hit_uses_cached_tha_output(self):
@@ -195,18 +195,18 @@ class TestCoreTRTRife(TestCoreTRTBase):
             rife_model_fp16=True,
             cache_max_giga=1.0,
         )
-        self.assertIsNotNone(core.cacher_512)
+        self.assertIsNotNone(core.cacher)
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        first = core.inference(pose)
-        hits = core.cacher_512.hits
-        misses = core.cacher_512.miss
+        first = core.inference([pose])
+        hits = core.cacher.hits
+        misses = core.cacher.miss
 
-        second = core.inference(pose)
+        second = core.inference([pose])
 
-        self.assertEqual(core.cacher_512.hits, hits + 1)
-        self.assertEqual(core.cacher_512.miss, misses)
+        self.assertEqual(core.cacher.hits, hits + 1)
+        self.assertEqual(core.cacher.miss, misses)
         self.assertEqual(first.shape, second.shape)
 
 
@@ -222,7 +222,7 @@ class TestCoreTRTSuperResolution(TestCoreTRTBase):
         self.assertIsNotNone(core.sr)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[1], 1024)
         self.assertEqual(output.shape[2], 1024)
 
@@ -231,24 +231,24 @@ class TestCoreTRTSuperResolution(TestCoreTRTBase):
         self.assertIsNotNone(core.sr)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[1], 1024)
         self.assertEqual(output.shape[2], 1024)
 
     def test_sr_cache_hit_reuses_cached_base(self):
         core = self.make_core(sr_model_enable=True, sr_model_scale=2, sr_model_fp16=True, cache_max_giga=1.0)
-        self.assertIsNotNone(core.cacher_512)
+        self.assertIsNotNone(core.cacher)
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        out1 = core.inference(pose)
-        hits = core.cacher_512.hits
-        misses = core.cacher_512.miss
+        out1 = core.inference([pose])
+        hits = core.cacher.hits
+        misses = core.cacher.miss
 
-        out2 = core.inference(pose)
+        out2 = core.inference([pose])
 
-        self.assertEqual(core.cacher_512.hits, hits + 1)
-        self.assertEqual(core.cacher_512.miss, misses)
+        self.assertEqual(core.cacher.hits, hits + 1)
+        self.assertEqual(core.cacher.miss, misses)
         self.assertEqual(out1.shape, out2.shape)
 
 
@@ -269,7 +269,7 @@ class TestCoreTRTCombined(TestCoreTRTBase):
         self.assertIsNotNone(core.sr)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[0], 2)
         self.assertEqual(output.shape[1], 1024)
         self.assertEqual(output.shape[2], 1024)
@@ -289,15 +289,15 @@ class TestCoreTRTCombined(TestCoreTRTBase):
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
-        first = core.inference(pose)
-        hits = core.cacher_512.hits
+        first = core.inference([pose])
+        hits = core.cacher.hits
 
-        second = core.inference(pose)
+        second = core.inference([pose])
 
         self.assertEqual(first.shape[0], 3)
         self.assertEqual(first.shape[1], 1024)
         self.assertEqual(first.shape[2], 1024)
-        self.assertEqual(core.cacher_512.hits, hits + 1)
+        self.assertEqual(core.cacher.hits, hits + 1)
         self.assertEqual(second.shape, first.shape)
 
     def test_v4_with_rife_and_sr(self):
@@ -316,7 +316,7 @@ class TestCoreTRTCombined(TestCoreTRTBase):
         self.assertIsNotNone(core.sr)
         core.setImage(self.test_image)
 
-        output = core.inference(self.get_pose(800))
+        output = core.inference([self.get_pose(800)])
         self.assertEqual(output.shape[0], 2)
         self.assertEqual(output.shape[1], 1024)
         self.assertEqual(output.shape[2], 1024)
@@ -345,19 +345,19 @@ def CoreTRT_ShowVideo_THAOnly():
     print("Pass 1 (cache cold):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
 
     print("Pass 2 (cache warm):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
 
     generate_video(frames, './test/data/core_trt_tha_only.mp4', 20)
 
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
 
 def CoreTRT_ShowVideo_THA_v4():
@@ -386,13 +386,13 @@ def CoreTRT_ShowVideo_THA_v4():
     print("Generating THA v4 frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
 
     generate_video(frames, './test/data/core_trt_tha_v4.mp4', 20)
 
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
 
 def CoreTRT_ShowVideo_WithRIFE_x2():
@@ -421,15 +421,61 @@ def CoreTRT_ShowVideo_WithRIFE_x2():
     print("Generating interpolated frames:")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+    for i in tqdm(range(200)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
 
     generate_video(frames, './test/data/core_trt_rife_x2.mp4', 40)
 
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
+def CoreTRT_ShowVideo_WithRIFE_x2_Cached():
+    print("=" * 60)
+    print("Generating video: THA + RIFE x2")
+    print("=" * 60)
+
+    core = CoreTRT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=2,
+        rife_model_fp16=True,
+        cache_max_giga=2.0,
+    )
+
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+
+    frames = []
+    print("Generating interpolated frames:")
+    for i in tqdm(range(0, 200, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+    for i in tqdm(range(0, 200, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+
+    generate_video(frames, './test/data/core_trt_rife_x2_cached.mp4', 20)
+
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
 def CoreTRT_ShowVideo_WithSR_waifu2x():
     print("=" * 60)
@@ -455,15 +501,19 @@ def CoreTRT_ShowVideo_WithSR_waifu2x():
 
     frames = []
     print("Generating SR frames (1024x1024):")
-    for i in tqdm(range(100)):
+    for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
+        frames.append(output[0, :, :, :3])
+    for i in tqdm(range(200)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
         frames.append(output[0, :, :, :3])
 
     generate_video(frames, './test/data/core_trt_sr_waifu2x.mp4', 20)
 
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
 
 def CoreTRT_ShowVideo_RIFE_x2_SR_x2():
@@ -495,15 +545,59 @@ def CoreTRT_ShowVideo_RIFE_x2_SR_x2():
     print("Generating interpolated + SR frames:")
     for i in tqdm(range(100)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         for j in range(output.shape[0]):
             frames.append(output[j, :, :, :3])
 
     generate_video(frames, './test/data/core_trt_rife_x2_sr_x2.mp4', 40)
 
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
+def CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached():
+    print("=" * 60)
+    print("Generating video: THA + RIFE x2 + waifu2x x2")
+    print("=" * 60)
+
+    core = CoreTRT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=2,
+        rife_model_fp16=True,
+        sr_model_enable=True,
+        sr_model_scale=2,
+        sr_model_fp16=True,
+        cache_max_giga=2.0,
+    )
+
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+
+    frames = []
+    print("Generating interpolated + SR frames:")
+    for i in tqdm(range(0, 400, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+    for i in tqdm(range(0, 400, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+
+    generate_video(frames, './test/data/core_trt_rife_x2_sr_x2_cached.mp4', 20)
+
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
 def CoreTRT_ShowVideo_CachePerformance():
     print("=" * 60)
@@ -529,24 +623,24 @@ def CoreTRT_ShowVideo_CachePerformance():
     print("Pass 1 (cache cold):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames_pass1.append(output[0, :, :, :3])
     pass1_time = time.time() - start_time
     print(f"Pass 1 time: {pass1_time:.2f}s")
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
     frames_pass2 = []
     start_time = time.time()
     print("\nPass 2 (cache warm):")
     for i in tqdm(range(200)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
-        output = core.inference(pose)
+        output = core.inference([pose])
         frames_pass2.append(output[0, :, :, :3])
     pass2_time = time.time() - start_time
     print(f"Pass 2 time: {pass2_time:.2f}s")
-    if core.cacher_512:
-        print(f"Cache stats - Hits: {core.cacher_512.hits}, Misses: {core.cacher_512.miss}")
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
     if pass2_time > 0:
         print(f"\nSpeedup from cache: {pass1_time / pass2_time:.2f}x")
@@ -561,16 +655,20 @@ if __name__ == "__main__":
             CoreTRT_ShowVideo_THAOnly()
             CoreTRT_ShowVideo_THA_v4()
             CoreTRT_ShowVideo_WithRIFE_x2()
+            CoreTRT_ShowVideo_WithRIFE_x2_Cached()
             CoreTRT_ShowVideo_WithSR_waifu2x()
             CoreTRT_ShowVideo_RIFE_x2_SR_x2()
+            CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached()
             CoreTRT_ShowVideo_CachePerformance()
         elif sys.argv[1] == '--show-tha':
             CoreTRT_ShowVideo_THAOnly()
             CoreTRT_ShowVideo_THA_v4()
         elif sys.argv[1] == '--show-rife':
             CoreTRT_ShowVideo_WithRIFE_x2()
+            CoreTRT_ShowVideo_WithRIFE_x2_Cached()
         elif sys.argv[1] == '--show-sr':
             CoreTRT_ShowVideo_WithSR_waifu2x()
+            CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached()
         elif sys.argv[1] == '--show-combined':
             CoreTRT_ShowVideo_RIFE_x2_SR_x2()
         elif sys.argv[1] == '--show-cache':
