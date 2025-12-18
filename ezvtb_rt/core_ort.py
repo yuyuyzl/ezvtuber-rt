@@ -4,7 +4,7 @@ import os
 from ezvtb_rt.tha3_ort import THA3ORTSessions, THA3ORTNonDefaultSessions
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.tha4_ort import THA4ORTSessions, THA4ORTNonDefaultSessions
-from ezvtb_rt.tha4_student_ort import THA4StudentORT
+from ezvtb_rt.tha4_student_ort import THA4StudentORTSessions
 from ezvtb_rt.common import Core
 import ezvtb_rt
 import onnxruntime as ort
@@ -46,12 +46,8 @@ class CoreORT(Core):
         elif tha_model_version == 'v4_student':
             # Support custom student models in data/models/custom_tha4_models
             if tha_model_name:
-                # Build path relative to project root (parent of ezvtuber-rt)
-                project_root = os.path.dirname(
-                    os.path.dirname(os.path.dirname(__file__))
-                )
                 tha_path = os.path.normpath(os.path.join(
-                    project_root, 'data', 'models',
+                    ezvtb_rt.EZVTB_DATA,
                     'custom_tha4_models', tha_model_name
                 ))
             else:
@@ -79,7 +75,7 @@ class CoreORT(Core):
             else:
                 self.tha = THA3ORTNonDefaultSessions(tha_path, device_id, use_eyebrow)
         elif tha_model_version == 'v4_student':
-            self.tha = THA4StudentORT(tha_path, device_id)
+            self.tha = THA4StudentORTSessions(tha_path, device_id)
         elif tha_model_version == 'v4':
             if device_id == 0:
                 self.tha = THA4ORTSessions(tha_path, use_eyebrow)
