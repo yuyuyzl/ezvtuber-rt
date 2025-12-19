@@ -135,13 +135,7 @@ class CoreTRT(Core):
         if rife_path is not None:
             self.rife = TRTEngine(rife_path, 2)
             self.rife.configure_in_out_tensors()
-            # Load additional RIFE engines for x2, x3, x4 similar to ORT
-            for i in [2, 3, 4]:
-                path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', f'rife_x{i}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
-                if os.path.exists(path):
-                    engine = TRTEngine(path, 2)
-                    engine.configure_in_out_tensors()
-                    self.rifes.append(engine)
+
         # Initialize SR if model path provided
         if sr_path is not None:
             self.sr = TRTEngine(sr_path, 1)
@@ -213,13 +207,7 @@ class CoreTRT(Core):
         rife_mem_res : HostDeviceMem = None
         if self.rife is not None:
             # Select appropriate RIFE engine based on number of interpolated frames (x2/x3/x4)
-            rife_engine = self.rife
-            if len(poses) > 1 and len(poses) - 2 < len(self.rifes):
-                rife_engine = self.rifes[len(poses) - 2]
-
-            # Configure batch for dynamic outputs
-            rife_engine.configure_in_out_tensors()
-            rife_mem_res = rife_engine.outputs[0]
+            rife_mem_res = self.rife.outputs[0]
 
             # Fast path: all poses except the last are cached
             all_cached = len(poses) > 1 and self.cacher is not None and all(self.cacher.query(hash(str(p))) for p in poses[:-1])
@@ -231,23 +219,20 @@ class CoreTRT(Core):
                 rife_mem_res.htod(self.main_stream)
             else: # Cases: one pose given but use interpolation, multiple poses with some missing cache, or no cache at all
                 # Prepare previous frame
-                np.copyto(rife_engine.inputs[0].host, self.last_tha_output)
-                rife_engine.inputs[0].htod(self.main_stream)
+                np.copyto(self.rife.inputs[0].host, self.last_tha_output)
+                self.rife.inputs[0].htod(self.main_stream)
 
                 # Current frame
-                rife_engine.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
+                self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
 
-                rife_engine.asyncKickoff(self.main_stream)
-                rife_engine.outputs[0].dtoh(self.main_stream)
+                self.rife.asyncKickoff(self.main_stream)
+                self.rife.outputs[0].dtoh(self.main_stream)
                 self.main_stream.synchronize()
 
                 # Cache interpolated frames when they align with provided poses
                 if len(poses) > 1 and self.cacher is not None and len(poses) == rife_mem_res.host.shape[0]:
                     for i in range(len(poses) - 1):
                         self.cacher.write(hash(str(poses[i])), rife_mem_res.host[i])
-                elif self.cacher is not None and len(poses) == 1:
-                    # Single pose with RIFE (no interpolation), cache THA output
-                    self.cacher.write(hash(str(poses[0])), tha_mem_res.host)
 
             # Track last THA output for future interpolation
             self.last_tha_output = np.copy(tha_mem_res.host)

@@ -82,9 +82,6 @@ class CoreORT(Core):
 
         if rife_path is not None:
             self.rife = createORTSession(rife_path, device_id)
-            for i in [2, 3, 4]:
-                path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', f'rife_x{i}_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
-                self.rifes.append(createORTSession(path, device_id))
         if sr_path is not None:
             self.sr = createORTSession(sr_path, device_id)
             if cache_max_giga > 0.0:
