@@ -10,8 +10,62 @@ from collections import OrderedDict
 
 from ezvtb_rt.trt_utils import *
 from ezvtb_rt.trt_engine import HostDeviceMem, TRTEngine
-from ezvtb_rt.vram_cache import VRAMCacher
 
+
+class VRAMMem(object):
+    """Manages allocation and lifecycle of CUDA device memory"""
+    def __init__(self, nbytes: int):
+        self.device = cuda.mem_alloc(nbytes)
+
+    def __str__(self):
+        return "\nDevice:\n" + str(self.device)
+
+    def __repr__(self):
+        return self.__str__()
+    
+    def __del__(self):
+        self.device.free()
+
+
+class DirectVRAMCacher(object):
+    """Implements LRU cache strategy for GPU memory management"""
+    """Do not use nvcomp because face morpher output is small and compression overhead is high"""
+    def __init__(self, nbytes: int, max_size: float):
+        assert nbytes > 0
+        self.pool = []
+        if max_size > 0:
+            while len(self.pool) * nbytes < max_size * 1024 * 1024 * 1024:
+                self.pool.append(VRAMMem(nbytes))
+        self.nbytes = nbytes
+        self.cache = OrderedDict()
+        self.hits = 0
+        self.miss = 0
+        self.max_size = max_size
+    
+    def query(self, hs: int) -> bool:
+        cached = self.cache.get(hs)
+        if cached is not None:
+            return True
+        else:
+            return False
+    
+    def read_mem_set(self, hs: int) -> VRAMMem:
+        cached = self.cache.get(hs)
+        if cached is not None:
+            self.hits += 1
+            self.cache.move_to_end(hs)
+            return cached
+        else:
+            self.miss += 1
+            return None
+    
+    def write_mem_set(self, hs: int) -> VRAMMem:
+        if len(self.pool) != 0:
+            mem_set = self.pool.pop()
+        else:
+            mem_set = self.cache.popitem(last=False)[1]
+        self.cache[hs] = mem_set
+        return mem_set
 
 class THA4StudentEngines():
     """THA4 Student Model (Mode 14) TensorRT implementation
@@ -53,9 +107,9 @@ class THA4StudentEngines():
         self.cachestream = cuda.Stream()  # Async cache writes
         
         # Setup single VRAMCacher with compressed storage (size in GB)
-        self.cacher = VRAMCacher(
-            max_size_gb=vram_cache_size,
-            stream=self.cachestream
+        self.cacher = DirectVRAMCacher(
+            nbytes=self.face_morpher.outputs[0].host.nbytes,
+            max_size=vram_cache_size
         ) if vram_cache_size > 0.0 else None
 
         # Create CUDA events for synchronization
@@ -97,7 +151,7 @@ class THA4StudentEngines():
         # Stage 1: Face Morpher (pose only, generates 128x128 face)
         face_pose_hash = hash(str(face_pose))
         face_cached = None if self.cacher is None else \
-            self.cacher.get(face_pose_hash)
+            self.cacher.read_mem_set(face_pose_hash)
         
         self.cachestream.synchronize()
 
@@ -105,7 +159,7 @@ class THA4StudentEngines():
             # Use cached result - copy from cache to input buffer (D2D)
             cuda.memcpy_dtod_async(
                 self.body_morpher.inputs[1].device,
-                face_cached[0].device,
+                face_cached.device,
                 self.body_morpher.inputs[1].host.nbytes,
                 stream)
         else:
@@ -115,7 +169,12 @@ class THA4StudentEngines():
             
             if self.cacher is not None:
                 self.cachestream.wait_for_event(self.finishedFaceMorpher)
-                self.cacher.put(face_pose_hash, [self.face_morpher.outputs[0]])
+                face_cached = self.cacher.write_mem_set(face_pose_hash)
+                cuda.memcpy_dtod_async(
+                    face_cached.device,
+                    self.face_morpher.outputs[0].device,
+                    self.face_morpher.outputs[0].host.nbytes,
+                    self.cachestream)
         
             self.body_morpher.inputs[1].bridgeFrom(self.face_morpher.outputs[0], stream)
 

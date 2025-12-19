@@ -484,7 +484,7 @@ def THA4StudentEngines_ShowVideo_WithCache():
 
     generate_video(frames, './test/data/tha4_student_cached_test.mp4', 20)
     if engine.cacher is not None:
-        print(f"Cache Stats - Hits: {engine.cacher.hits}, Misses: {engine.cacher.miss}, Hit Rate: {engine.cacher.hit_rate:.2%}")
+        print(f"Cache Stats - Hits: {engine.cacher.hits}, Misses: {engine.cacher.miss}, Hit Rate: {engine.cacher.hits / (engine.cacher.hits + engine.cacher.miss):.2%}")
 
 
 def THA4StudentEngines_ShowVideo_NoCache():
