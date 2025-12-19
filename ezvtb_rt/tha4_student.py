@@ -117,7 +117,7 @@ class THA4StudentEngines():
                 self.cachestream.wait_for_event(self.finishedFaceMorpher)
                 self.cacher.put(face_pose_hash, [self.face_morpher.outputs[0]])
         
-        self.body_morpher.inputs[1].bridgeFrom(self.face_morpher.outputs[0], stream)
+            self.body_morpher.inputs[1].bridgeFrom(self.face_morpher.outputs[0], stream)
 
         self.body_morpher.asyncKickoff(stream)
         self.body_morpher.outputs[1].dtoh(stream)
