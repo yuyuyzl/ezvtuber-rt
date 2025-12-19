@@ -2,7 +2,7 @@ from ezvtb_rt.trt_utils import *
 from ezvtb_rt.trt_engine import TRTEngine, HostDeviceMem
 from ezvtb_rt.tha3 import THA3Engines
 from ezvtb_rt.tha4 import THA4Engines
-from ezvtb_rt.tha4_student import THA4Student
+from ezvtb_rt.tha4_student import THA4StudentEngines
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.common import Core
 import ezvtb_rt
@@ -115,7 +115,7 @@ class CoreTRT(Core):
         if self.v3:
             self.tha = THA3Engines(tha_path, vram_cache_size, use_eyebrow)
         elif tha_model_version == 'v4_student':
-            self.tha = THA4Student(tha_path)
+            self.tha = THA4StudentEngines(tha_path)
         elif tha_model_version == 'v4':
             self.tha = THA4Engines(tha_path, vram_cache_size, use_eyebrow)
         else:

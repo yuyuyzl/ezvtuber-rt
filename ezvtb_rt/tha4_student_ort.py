@@ -4,18 +4,7 @@ Two-stage inference architecture with DirectML GPU acceleration
 import os
 import onnxruntime as ort
 import numpy as np
-
-def createORTSession(model_path:str, device_id:int = 0):
-    provider = 'DmlExecutionProvider'
-    providers = [ provider]
-    options = ort.SessionOptions()
-    options.enable_mem_pattern = True
-    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    options.enable_cpu_mem_arena = True
-    provider_options = [{'device_id':device_id, "execution_mode": "parallel", "arena_extend_strategy": "kSameAsRequested"}]
-    session = ort.InferenceSession(model_path, sess_options=options, providers=providers, provider_options=provider_options)
-    return session
+from ezvtb_rt.ort_utils import createORTSession
 
 class THA4StudentORTSessions:
     """THA4 Student Model ONNX Runtime implementation with DirectML GPU support
@@ -161,7 +150,7 @@ class THA4StudentORTSessions:
             # Run body morpher with IO binding
             self.body_morpher.run_with_iobinding(self.body_binding)
             
-            return self.cv_result_buffer.numpy().copy()
+            return self.cv_result_buffer.numpy()
         else:
             return self.body_morpher.run(None, {
                 'input_image': self.input_image,

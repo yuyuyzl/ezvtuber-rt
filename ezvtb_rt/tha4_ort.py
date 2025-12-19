@@ -6,6 +6,7 @@ import onnxruntime as ort
 import onnx
 import numpy as np
 from typing import List
+from ezvtb_rt.ort_utils import createORTSession
 
 
 
@@ -28,27 +29,12 @@ class THA4ORTSessions:
         else:
             self.dtype = np.float32
         
-        # Check for available GPU providers
-        available = ort.get_available_providers()
-        if 'CUDAExecutionProvider' in available:
-            self.provider = 'CUDAExecutionProvider'
-            self.device = 'cuda'
-        elif 'DmlExecutionProvider' in available:
-            self.provider = 'DmlExecutionProvider'
-            self.device = 'dml'
-        else:
-            raise ValueError('No GPU provider available for ONNX Runtime')
+        self.provider = 'DmlExecutionProvider'
+        self.device = 'dml'
         
         print('Using THA4 ORT with EP:', self.provider)
         
         self.use_eyebrow = use_eyebrow
-        
-        # Session options
-        providers = [self.provider]
-        options = ort.SessionOptions()
-        options.enable_mem_pattern = False
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         
         # Create OrtValues for GPU memory
         if use_eyebrow:
@@ -72,22 +58,16 @@ class THA4ORTSessions:
             (512, 512, 4), np.uint8, self.device)
         
         # Load ONNX sessions
-        self.decomposer = ort.InferenceSession(
-            os.path.join(tha4_dir, 'decomposer.onnx'),
-            sess_options=options,
-            providers=providers)
+        self.decomposer = createORTSession(
+            os.path.join(tha4_dir, 'decomposer.onnx'), device_id=0)
         
         if not use_eyebrow:
-            self.combiner = ort.InferenceSession(
-                os.path.join(tha4_dir, 'combiner.onnx'),
-                sess_options=options,
-                providers=providers)
+            self.combiner = createORTSession(
+                os.path.join(tha4_dir, 'combiner.onnx'), device_id=0)
         
         merge_filename = 'merge.onnx' if use_eyebrow else 'merge_no_eyebrow.onnx'
-        self.merged = ort.InferenceSession(
-            os.path.join(tha4_dir, merge_filename),
-            sess_options=options,
-            providers=providers)
+        self.merged = createORTSession(
+            os.path.join(tha4_dir, merge_filename), device_id=0)
         
         # Setup IO binding for merged model
         self.binding = self.merged.io_binding()
@@ -174,39 +154,21 @@ class THA4ORTNonDefaultSessions:
         else:
             self.dtype = np.float32
         
-        available = ort.get_available_providers()
-        if 'CUDAExecutionProvider' in available:
-            self.provider = ('CUDAExecutionProvider', {'device_id': device_id})
-        elif 'DmlExecutionProvider' in available:
-            self.provider = ('DmlExecutionProvider', {'device_id': device_id})
-        else:
-            raise ValueError('No GPU provider available')
-        
         print(f'Using THA4 ORT Non-Default with device_id={device_id}')
         
         self.use_eyebrow = use_eyebrow
         
-        # For non-default device, use fully merged model
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        
         # Load separate sessions
-        self.decomposer = ort.InferenceSession(
-            os.path.join(tha4_dir, 'decomposer.onnx'),
-            sess_options=options,
-            providers=[self.provider])
+        self.decomposer = createORTSession(
+            os.path.join(tha4_dir, 'decomposer.onnx'), device_id=device_id)
         
         if not use_eyebrow:
-            self.combiner = ort.InferenceSession(
-                os.path.join(tha4_dir, 'combiner.onnx'),
-                sess_options=options,
-                providers=[self.provider])
+            self.combiner = createORTSession(
+                os.path.join(tha4_dir, 'combiner.onnx'), device_id=device_id)
         
         merge_filename = 'merge.onnx' if use_eyebrow else 'merge_no_eyebrow.onnx'
-        self.merged = ort.InferenceSession(
-            os.path.join(tha4_dir, merge_filename),
-            sess_options=options,
-            providers=[self.provider])
+        self.merged = createORTSession(
+            os.path.join(tha4_dir, merge_filename), device_id=device_id)
         
         # Store intermediate results
         self.decomposed_results = None

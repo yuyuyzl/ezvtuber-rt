@@ -3,18 +3,7 @@ import onnxruntime as ort
 import onnx
 import numpy as np
 from typing import List
-
-def createORTSession(model_path:str, device_id:int = 0):
-    provider = 'DmlExecutionProvider'
-    providers = [ provider]
-    options = ort.SessionOptions()
-    options.enable_mem_pattern = True
-    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    options.enable_cpu_mem_arena = True
-    provider_options = [{'device_id':device_id, "execution_mode": "parallel", "arena_extend_strategy": "kSameAsRequested"}]
-    session = ort.InferenceSession(model_path, sess_options=options, providers=providers, provider_options=provider_options)
-    return session
+from ezvtb_rt.ort_utils import createORTSession
 
 class THA3ORTSessions:
     def __init__(self, tha_dir:str, use_eyebrow:bool = True):
