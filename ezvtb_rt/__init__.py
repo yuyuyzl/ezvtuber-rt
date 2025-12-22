@@ -35,7 +35,7 @@ try:
     device_id = int(os.environ.get('EZVTB_DEVICE_ID', '0'))
     cudaSetDevice(device_id)
     import pycuda.autoinit  # Ensure PyCUDA is initialized for TensorRT
-    from ezvtb_rt.core import CoreTRT
+    from ezvtb_rt.core_trt import CoreTRT
     __all__.append("CoreTRT")
 except ImportError:
     print("TensorRT or PyCUDA not available, CoreTRT disabled.")
