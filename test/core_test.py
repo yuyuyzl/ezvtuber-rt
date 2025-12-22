@@ -10,7 +10,7 @@ import numpy as np
 import pycuda.autoinit  # noqa: F401 - ensure CUDA context is ready
 from tqdm import tqdm
 
-from ezvtb_rt.core import CoreTRT
+from ezvtb_rt.core_trt import CoreTRT
 
 
 def generate_video(imgs: List[np.ndarray], video_path: str, framerate: float):
