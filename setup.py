@@ -23,6 +23,7 @@ core_dependencies = [
     "onnxruntime-directml",
     "pycuda",
     "brotli",  # For cache compression
+    "nvidia-nvcomp-cu12" # For VRAM cache compression (NVIDIA GPUs only)
 ]
 
 setup(
