@@ -5,11 +5,10 @@ from ezvtb_rt.tha3_ort import THA3ORTSessions, THA3ORTNonDefaultSessions
 from ezvtb_rt.cache import Cacher
 from ezvtb_rt.tha4_ort import THA4ORTSessions, THA4ORTNonDefaultSessions
 from ezvtb_rt.tha4_student_ort import THA4StudentORTSessions
-from ezvtb_rt.common import Core
 import ezvtb_rt
 from ezvtb_rt.ort_utils import createORTSession
 
-class CoreORT(Core):
+class CoreORT:
     def __init__(self,
                  tha_model_version:str = 'v3',
                  tha_model_seperable:bool = True,

@@ -4,7 +4,6 @@ from ezvtb_rt.tha3 import THA3Engines
 from ezvtb_rt.tha4 import THA4Engines
 from ezvtb_rt.tha4_student import THA4StudentEngines
 from ezvtb_rt.cache import Cacher
-from ezvtb_rt.common import Core
 import ezvtb_rt
 import numpy as np
 import os
@@ -38,7 +37,7 @@ def find_none_block_indices(lst):
     
     return i1, i2
 
-class CoreTRT(Core):
+class CoreTRT:
     """Main inference pipeline combining THA face model with optional components:
     - RIFE for frame interpolation
     - SR for super resolution
