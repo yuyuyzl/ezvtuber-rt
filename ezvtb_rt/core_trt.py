@@ -185,7 +185,7 @@ class CoreTRT:
         # THA cache lookup for the last pose only (matches ORT semantics)
         if self.cacher is not None:
             self.cache_stream.synchronize()
-            cached_output = self.cacher.read(hash(str(tha_pose)))
+            cached_output = self.cacher.get(hash(str(tha_pose)))
             if cached_output is not None:
                 np.copyto(tha_mem_res.host, cached_output)
                 tha_mem_res.htod(self.main_stream)
@@ -196,7 +196,7 @@ class CoreTRT:
             tha_mem_res.dtoh(self.main_stream)
             self.main_stream.synchronize()
             if self.cacher is not None:
-                self.cacher.write(hash(str(tha_pose)), tha_mem_res.host)
+                self.cacher.put(hash(str(tha_pose)), tha_mem_res.host)
 
         # If no RIFE and no SR, just return THA result
         if self.rife is None and self.sr is None:
@@ -231,7 +231,7 @@ class CoreTRT:
                 # Cache interpolated frames when they align with provided poses
                 if len(poses) > 1 and self.cacher is not None and len(poses) == rife_mem_res.host.shape[0]:
                     for i in range(len(poses) - 1):
-                        self.cacher.write(hash(str(poses[i])), rife_mem_res.host[i])
+                        self.cacher.put(hash(str(poses[i])), rife_mem_res.host[i])
 
             # Track last THA output for future interpolation
             self.last_tha_output = np.copy(tha_mem_res.host)
@@ -267,7 +267,7 @@ class CoreTRT:
                 self.sr.outputs[0].dtoh(self.main_stream)
                 self.main_stream.synchronize()
                 if self.sr_cacher is not None:
-                    self.sr_cacher.write(hs, self.sr.outputs[0].host[-1])
+                    self.sr_cacher.put(hs, self.sr.outputs[0].host[-1])
                 return np.copy(self.sr.outputs[0].host)
         else: # Multiple poses with RIFE followed by SR
             assert len(rife_mem_res.host.shape) == 4 and rife_mem_res.host.shape[0] == len(poses)
@@ -295,6 +295,6 @@ class CoreTRT:
                     if sr_results[i] is None:
                         sr_results[i] = np.copy(self.sr.outputs[0].host[sr_output_idx])
                         if self.sr_cacher is not None:
-                            self.sr_cacher.write(hash(str(poses[i])), sr_results[i])
+                            self.sr_cacher.put(hash(str(poses[i])), sr_results[i])
                         sr_output_idx += 1
                 return np.stack(sr_results, axis=0)     

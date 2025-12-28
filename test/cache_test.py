@@ -71,10 +71,10 @@ class TestCacherBasicOperations(unittest.TestCase):
         hash_key = 12345
         
         # Write to cache
-        cacher.write(hash_key, test_data)
+        cacher.put(hash_key, test_data)
         
         # Read back
-        result = cacher.read(hash_key)
+        result = cacher.get(hash_key)
         
         self.assertIsNotNone(result)
         np.testing.assert_array_equal(result, test_data)
@@ -83,7 +83,7 @@ class TestCacherBasicOperations(unittest.TestCase):
         """Test reading a key that doesn't exist returns None."""
         cacher = Cacher(max_volume_giga=0.1, width=self.test_width, height=self.test_height)
         
-        result = cacher.read(99999)
+        result = cacher.get(99999)
         
         self.assertIsNone(result)
         self.assertEqual(cacher.miss, 1)
@@ -96,15 +96,15 @@ class TestCacherBasicOperations(unittest.TestCase):
         test_data = self._create_random_image()
         hash_key = 100
         
-        cacher.write(hash_key, test_data)
+        cacher.put(hash_key, test_data)
         
         # First read
-        cacher.read(hash_key)
+        cacher.get(hash_key)
         self.assertEqual(cacher.hits, 1)
         self.assertEqual(cacher.miss, 0)
         
         # Second read
-        cacher.read(hash_key)
+        cacher.get(hash_key)
         self.assertEqual(cacher.hits, 2)
         self.assertEqual(cacher.miss, 0)
     
@@ -113,9 +113,9 @@ class TestCacherBasicOperations(unittest.TestCase):
         cacher = Cacher(max_volume_giga=0.1, width=self.test_width, height=self.test_height)
         
         # Read non-existent keys
-        cacher.read(1)
-        cacher.read(2)
-        cacher.read(3)
+        cacher.get(1)
+        cacher.get(2)
+        cacher.get(3)
         
         self.assertEqual(cacher.miss, 3)
         self.assertEqual(cacher.hits, 0)
@@ -129,18 +129,18 @@ class TestCacherBasicOperations(unittest.TestCase):
         hash_key = 500
         
         # Write first data
-        cacher.write(hash_key, data1)
+        cacher.put(hash_key, data1)
         size_after_first = cacher.cached_kbytes
         
         # Try to write different data with same key
-        cacher.write(hash_key, data2)
+        cacher.put(hash_key, data2)
         size_after_second = cacher.cached_kbytes
         
         # Size should not change
         self.assertEqual(size_after_first, size_after_second)
         
         # Should still return first data
-        result = cacher.read(hash_key)
+        result = cacher.get(hash_key)
         np.testing.assert_array_equal(result, data1)
     
     def test_write_with_real_image(self):
@@ -151,9 +151,9 @@ class TestCacherBasicOperations(unittest.TestCase):
         cacher = Cacher(max_volume_giga=0.1, width=self.test_width, height=self.test_height)
         
         hash_key = 1001
-        cacher.write(hash_key, self.base_image)
+        cacher.put(hash_key, self.base_image)
         
-        result = cacher.read(hash_key)
+        result = cacher.get(hash_key)
         
         self.assertIsNotNone(result)
         np.testing.assert_array_equal(result, self.base_image)
@@ -178,9 +178,9 @@ class TestCacherLRU(unittest.TestCase):
         data3 = self._create_random_image(seed=3)
         
         # Write three entries - should evict oldest
-        cacher.write(1, data1)
-        cacher.write(2, data2)
-        cacher.write(3, data3)
+        cacher.put(1, data1)
+        cacher.put(2, data2)
+        cacher.put(3, data3)
         
         # First entry should be evicted (or at least cache should be under limit)
         self.assertLessEqual(cacher.cached_kbytes, cacher.max_kbytes)
@@ -193,14 +193,14 @@ class TestCacherLRU(unittest.TestCase):
         data1 = self._create_random_image(seed=10)
         data2 = self._create_random_image(seed=20)
         
-        cacher.write(1, data1)
-        cacher.write(2, data2)
+        cacher.put(1, data1)
+        cacher.put(2, data2)
         
         # Verify both entries exist before testing promotion
         self.assertEqual(len(cacher.cache), 2)
         
         # Read entry 1 to promote it
-        cacher.read(1)
+        cacher.get(1)
         
         # Entry 1 should now be at the end (MRU)
         keys = list(cacher.cache.keys())
@@ -213,7 +213,7 @@ class TestCacherLRU(unittest.TestCase):
         self.assertEqual(cacher.cached_kbytes, 0)
         
         data = self._create_random_image()
-        cacher.write(1, data)
+        cacher.put(1, data)
         
         # Size should be positive after write
         self.assertGreater(cacher.cached_kbytes, 0)
@@ -230,7 +230,7 @@ class TestCacherLRU(unittest.TestCase):
         # Write many entries
         for i in range(10):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Cache should stay within limits
         self.assertLessEqual(cacher.cached_kbytes, cacher.max_kbytes)
@@ -254,15 +254,15 @@ class TestCacherAntiThrashing(unittest.TestCase):
         # Write 10 entries
         for i in range(10):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Read 6 different keys sequentially (more than 5)
         for i in range(6):
-            cacher.read(i)
+            cacher.get(i)
         
         # The 7th read to a different key should return None due to anti-thrashing
         # continues_hits is now 6, which is > 5
-        result = cacher.read(7)
+        result = cacher.get(7)
         self.assertIsNone(result)
     
     def test_anti_thrashing_same_key_resets_counter(self):
@@ -272,16 +272,16 @@ class TestCacherAntiThrashing(unittest.TestCase):
         # Write entries
         for i in range(10):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Read different keys to build up continues_hits
         for i in range(4):
-            cacher.read(i)
+            cacher.get(i)
         
         self.assertEqual(cacher.continues_hits, 4)
         
         # Read the same key as last time (key 3)
-        cacher.read(3)
+        cacher.get(3)
         
         # Counter should reset to 0
         self.assertEqual(cacher.continues_hits, 0)
@@ -293,16 +293,16 @@ class TestCacherAntiThrashing(unittest.TestCase):
         # Write some entries
         for i in range(5):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Build up continues_hits
         for i in range(4):
-            cacher.read(i)
+            cacher.get(i)
         
         self.assertGreater(cacher.continues_hits, 0)
         
         # Trigger a miss
-        cacher.read(999)
+        cacher.get(999)
         
         # Counter should reset to 0
         self.assertEqual(cacher.continues_hits, 0)
@@ -314,21 +314,21 @@ class TestCacherAntiThrashing(unittest.TestCase):
         # Write entries
         for i in range(5):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Initially 0
         self.assertEqual(cacher.continues_hits, 0)
         
         # Read key 0
-        cacher.read(0)
+        cacher.get(0)
         self.assertEqual(cacher.continues_hits, 1)
         
         # Read key 1 (different)
-        cacher.read(1)
+        cacher.get(1)
         self.assertEqual(cacher.continues_hits, 2)
         
         # Read key 2 (different)
-        cacher.read(2)
+        cacher.get(2)
         self.assertEqual(cacher.continues_hits, 3)
 
 
@@ -543,14 +543,14 @@ class TestCacherBenchmarks(unittest.TestCase):
         
         # Warm up
         for i in range(10):
-            cacher.write(i, test_images[i])
+            cacher.put(i, test_images[i])
         cacher.cache.clear()
         cacher.cached_kbytes = 0
         
         # Benchmark
         start = time.perf_counter()
         for i in tqdm(range(num_iterations), desc="Writing"):
-            cacher.write(i + 1000, test_images[i])
+            cacher.put(i + 1000, test_images[i])
         elapsed = time.perf_counter() - start
         
         ops_per_sec = num_iterations / elapsed
@@ -573,14 +573,14 @@ class TestCacherBenchmarks(unittest.TestCase):
         num_entries = 100
         test_images = [self._create_random_image(seed=i) for i in range(num_entries)]
         for i, img in enumerate(test_images):
-            cacher.write(i, img)
+            cacher.put(i, img)
         
         num_iterations = 500
         
         # Warm up
         for i in range(10):
             cacher.continues_hits = 0  # Reset anti-thrashing
-            cacher.read(i % num_entries)
+            cacher.get(i % num_entries)
         
         # Benchmark - read with anti-thrashing reset
         start = time.perf_counter()
@@ -588,7 +588,7 @@ class TestCacherBenchmarks(unittest.TestCase):
             # Reset anti-thrashing to ensure hits
             if cacher.continues_hits > 4:
                 cacher.continues_hits = 0
-            cacher.read(i % num_entries)
+            cacher.get(i % num_entries)
         elapsed = time.perf_counter() - start
         
         ops_per_sec = num_iterations / elapsed
@@ -611,7 +611,7 @@ class TestCacherBenchmarks(unittest.TestCase):
         
         # Warm up
         for i in range(20):
-            cacher.write(i, test_images[i])
+            cacher.put(i, test_images[i])
         
         # Mixed workload: 70% reads, 30% writes
         np.random.seed(42)
@@ -626,10 +626,10 @@ class TestCacherBenchmarks(unittest.TestCase):
                 # Reset anti-thrashing periodically
                 if cacher.continues_hits > 4:
                     cacher.continues_hits = 0
-                cacher.read(i % 50)
+                cacher.get(i % 50)
                 read_count += 1
             else:
-                cacher.write(i + 10000, test_images[i % 100])
+                cacher.put(i + 10000, test_images[i % 100])
                 write_count += 1
         elapsed = time.perf_counter() - start
         
@@ -657,7 +657,7 @@ class TestCacherBenchmarks(unittest.TestCase):
         
         start = time.perf_counter()
         for i in tqdm(range(num_iterations), desc="Eviction pressure"):
-            cacher.write(i, test_images[i])
+            cacher.put(i, test_images[i])
         elapsed = time.perf_counter() - start
         
         ops_per_sec = num_iterations / elapsed
@@ -801,11 +801,11 @@ class TestCacherBenchmarks1024(unittest.TestCase):
         
         # Warmup
         for i in range(10):
-            cacher.write(i + 100000, test_images[i % len(test_images)])
+            cacher.put(i + 100000, test_images[i % len(test_images)])
         
         start = time.perf_counter()
         for i in tqdm(range(iterations), desc="Write 1024x1024"):
-            cacher.write(i, test_images[i % len(test_images)])
+            cacher.put(i, test_images[i % len(test_images)])
         elapsed = time.perf_counter() - start
         
         ops_per_sec = iterations / elapsed
@@ -827,19 +827,19 @@ class TestCacherBenchmarks1024(unittest.TestCase):
         num_entries = 200
         test_images = [self._create_random_image(seed=i) for i in range(num_entries)]
         for i in range(num_entries):
-            cacher.write(i, test_images[i])
+            cacher.put(i, test_images[i])
         
         iterations = 500
         
         # Warmup
         for i in range(10):
             cacher.continues_hits = 0  # Reset anti-thrashing
-            cacher.read(i % num_entries)
+            cacher.get(i % num_entries)
         
         start = time.perf_counter()
         for i in tqdm(range(iterations), desc="Read 1024x1024"):
             cacher.continues_hits = 0  # Disable anti-thrashing for benchmark
-            cacher.read(i % num_entries)
+            cacher.get(i % num_entries)
         elapsed = time.perf_counter() - start
         
         ops_per_sec = iterations / elapsed
@@ -864,10 +864,10 @@ class TestCacherBenchmarks1024(unittest.TestCase):
         for i in tqdm(range(iterations), desc="Mixed 1024x1024"):
             key = i % 100
             if i % 3 == 0:  # ~33% writes
-                cacher.write(key, test_images[i % len(test_images)])
+                cacher.put(key, test_images[i % len(test_images)])
             else:  # ~67% reads
                 cacher.continues_hits = 0
-                cacher.read(key)
+                cacher.get(key)
         elapsed = time.perf_counter() - start
         
         ops_per_sec = iterations / elapsed
@@ -928,7 +928,7 @@ class TestCacherBenchmarks1024(unittest.TestCase):
         start = time.perf_counter()
         for i in tqdm(range(iterations), desc="Eviction 1024x1024"):
             before_size = len(cacher.cache)
-            cacher.write(i, test_images[i % len(test_images)])
+            cacher.put(i, test_images[i % len(test_images)])
             if len(cacher.cache) <= before_size and i > 0:
                 eviction_count += 1
         elapsed = time.perf_counter() - start
@@ -1074,7 +1074,7 @@ class TestCacherEdgeCases1024(unittest.TestCase):
         # Write several entries
         for i in range(10):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Verify size tracking
         calculated_kb = sum(len(v) for v in cacher.cache.values()) / 1024
@@ -1089,7 +1089,7 @@ class TestCacherEdgeCases1024(unittest.TestCase):
         
         for i in range(50):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Should stay under limit
         self.assertLessEqual(cacher.cached_kbytes, cacher.max_kbytes)
@@ -1115,9 +1115,9 @@ class TestCacherEdgeCases(unittest.TestCase):
         cacher = Cacher(max_volume_giga=1.0, width=512, height=512)
         
         self.assertEqual(len(cacher.cache), 0)
-        self.assertIsNone(cacher.read(0))
-        self.assertIsNone(cacher.read(12345))
-        self.assertIsNone(cacher.read(-1))
+        self.assertIsNone(cacher.get(0))
+        self.assertIsNone(cacher.get(12345))
+        self.assertIsNone(cacher.get(-1))
     
     def test_very_small_cache(self):
         """Test cache smaller than one entry."""
@@ -1125,7 +1125,7 @@ class TestCacherEdgeCases(unittest.TestCase):
         cacher = Cacher(max_volume_giga=0.00001, width=512, height=512)  # ~10KB
         
         data = self._create_random_image()
-        cacher.write(1, data)
+        cacher.put(1, data)
         
         # Entry should be immediately evicted or not stored
         # Cache should still be within limits
@@ -1137,11 +1137,11 @@ class TestCacherEdgeCases(unittest.TestCase):
         
         data = self._create_random_image()
         
-        cacher.write(-1, data)
-        cacher.write(-12345, data)
-        cacher.write(-999999, data)
+        cacher.put(-1, data)
+        cacher.put(-12345, data)
+        cacher.put(-999999, data)
         
-        result = cacher.read(-1)
+        result = cacher.get(-1)
         self.assertIsNotNone(result)
         np.testing.assert_array_equal(result, data)
     
@@ -1150,9 +1150,9 @@ class TestCacherEdgeCases(unittest.TestCase):
         cacher = Cacher(max_volume_giga=0.1, width=512, height=512)
         
         data = self._create_random_image()
-        cacher.write(0, data)
+        cacher.put(0, data)
         
-        result = cacher.read(0)
+        result = cacher.get(0)
         self.assertIsNotNone(result)
         np.testing.assert_array_equal(result, data)
     
@@ -1163,8 +1163,8 @@ class TestCacherEdgeCases(unittest.TestCase):
         data = self._create_random_image()
         large_key = 2**62
         
-        cacher.write(large_key, data)
-        result = cacher.read(large_key)
+        cacher.put(large_key, data)
+        result = cacher.get(large_key)
         
         self.assertIsNotNone(result)
         np.testing.assert_array_equal(result, data)
@@ -1174,11 +1174,11 @@ class TestCacherEdgeCases(unittest.TestCase):
         cacher = Cacher(max_volume_giga=0.1, width=512, height=512)
         
         data = self._create_random_image()
-        cacher.write(100, data)
+        cacher.put(100, data)
         
         # Read same key 10 times
         for _ in range(10):
-            result = cacher.read(100)
+            result = cacher.get(100)
             self.assertIsNotNone(result)
             np.testing.assert_array_equal(result, data)
         
@@ -1193,22 +1193,22 @@ class TestCacherEdgeCases(unittest.TestCase):
         # Write 10 entries
         for i in range(10):
             data = self._create_random_image(seed=i)
-            cacher.write(i, data)
+            cacher.put(i, data)
         
         # Read exactly 5 different keys
         for i in range(5):
-            result = cacher.read(i)
+            result = cacher.get(i)
             self.assertIsNotNone(result)  # Should still hit
         
         self.assertEqual(cacher.continues_hits, 5)
         
         # 6th read should still succeed (condition is > 5, not >= 5)
-        result = cacher.read(5)
+        result = cacher.get(5)
         self.assertIsNotNone(result)
         self.assertEqual(cacher.continues_hits, 6)
         
         # 7th read to different key should return None
-        result = cacher.read(6)
+        result = cacher.get(6)
         self.assertIsNone(result)
 
 

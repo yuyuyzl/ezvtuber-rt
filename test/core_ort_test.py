@@ -9,6 +9,7 @@ Tests different configurations including:
 import unittest
 import sys
 import os
+from ezvtb_rt import init_model_path
 from ezvtb_rt.init_utils import check_exist_all_models
 from ezvtb_rt.core_ort import CoreORT
 from ezvtb_rt.tha3_ort import THA3ORTSessions
@@ -253,67 +254,6 @@ class TestCoreORTCacher(TestCoreORTBase):
         self.assertEqual(core.cacher.miss, 5)
         self.assertEqual(core.cacher.hits, 0)
     
-    def test_cacher_anti_thrashing_mechanism(self):
-        """Test the anti-thrashing mechanism that forces miss after 5 consecutive different-key hits"""
-        core = CoreORT(
-            tha_model_version='v3',
-            tha_model_seperable=True,
-            tha_model_fp16=True,
-            use_eyebrow=False,
-            cache_max_giga=1.0
-        )
-        core.setImage(self.test_image)
-        
-        # First, populate the cache with 10 different poses
-        poses = [self.get_pose(800 + i) for i in range(10)]
-        for pose in poses:
-            core.inference([pose])
-        
-        self.assertEqual(core.cacher.miss, 10)
-        self.assertEqual(core.cacher.hits, 0)
-        
-        # Now access the same 10 poses again - should trigger anti-thrashing
-        # After 5 consecutive hits with different keys, the 6th is forced to miss
-        initial_misses = core.cacher.miss
-        initial_hits = core.cacher.hits
-        
-        for pose in poses:
-            core.inference([pose])
-        
-        # Due to anti-thrashing: after 5 hits, continues_hits > 5, so next is forced miss
-        # The forced miss resets continues_hits to 0
-        # Expected pattern: 5 hits, 1 forced miss, then 4 more attempts
-        # After the forced miss, continues_hits resets, so next 4 can be hits again before hitting limit
-        self.assertGreater(core.cacher.hits, initial_hits, "Should have some hits")
-        self.assertGreater(core.cacher.miss, initial_misses, "Should have forced misses from anti-thrashing")
-    
-    def test_cacher_anti_thrashing_reset_on_same_key(self):
-        """Test that accessing same key consecutively resets the anti-thrashing counter"""
-        core = CoreORT(
-            tha_model_version='v3',
-            tha_model_seperable=True,
-            tha_model_fp16=True,
-            use_eyebrow=False,
-            cache_max_giga=1.0
-        )
-        core.setImage(self.test_image)
-        
-        pose = self.get_pose(800)
-        
-        # First access - miss
-        core.inference([pose])
-        self.assertEqual(core.cacher.miss, 1)
-        self.assertEqual(core.cacher.hits, 0)
-        
-        # Many consecutive accesses to same pose - all should hit
-        # because same-key access resets continues_hits to 0
-        for _ in range(20):
-            core.inference([pose])
-        
-        # All subsequent accesses should be hits (no anti-thrashing for same key)
-        self.assertEqual(core.cacher.miss, 1)
-        self.assertEqual(core.cacher.hits, 20)
-    
     def test_cacher_performance_two_passes(self):
         """Test cache performance with two passes over same data
         
@@ -346,17 +286,6 @@ class TestCoreORTCacher(TestCoreORTBase):
         # the 6th will be forced to miss. Pattern: 5 hits, 1 miss, 5 hits, 1 miss, etc.
         for pose in poses:
             core.inference([pose])
-        
-        # With 20 different poses: hits pattern is 5, miss, 5, miss, 5, miss, 2 (remaining)
-        # Expected: 17 hits (5+5+5+2), 3 forced misses in second pass
-        # Total misses = 20 (first pass) + 3 (forced) = 23
-        # Total hits = 17
-        # But the forced miss also resets continues_hits, so actual pattern may vary
-        
-        # Just verify we got some hits (cache is working) and some forced misses (anti-thrashing)
-        self.assertGreater(core.cacher.hits, 0, "Should have some cache hits")
-        self.assertGreater(core.cacher.miss, first_pass_misses, "Should have forced misses due to anti-thrashing")
-
 
 class TestCoreORTRIFE(TestCoreORTBase):
     """Test CoreORT with RIFE frame interpolation"""
@@ -1222,7 +1151,8 @@ def CoreORT_ShowVideo_THA_v4():
 
 if __name__ == "__main__":
     import sys
-    
+    import os
+    init_model_path(os.path.join(os.path.dirname(__file__), '..', 'data'))
     if len(sys.argv) > 1:
         if sys.argv[1] == '--show-all':
             print("Running all video showcase tests")

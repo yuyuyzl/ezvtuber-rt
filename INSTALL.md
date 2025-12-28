@@ -12,7 +12,7 @@ conda install conda-forge::pycuda
 
 ```bash
 git clone https://github.com/zpeng11/ezvtuber-rt.git && cd ezvtuber-rt
-conda install -c nvidia/label/cuda-12.9.1 cuda-toolkit cudnn # You may want to chose a proper version
+conda install -c nvidia/label/cuda-12.9.1 cuda-nvcc-dev_win-64 cudnn # You may want to chose a proper version
 pip install tensorrt_cu12_libs==10.11.0.33 tensorrt_cu12_bindings==10.11.0.33 tensorrt==10.11.0.33 --extra-index-url https://pypi.nvidia.com #need to fit with cuda-toolkit version
 pip install . #This will require a VS2022+ dev environment to build pycuda
 ```

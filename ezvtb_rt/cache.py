@@ -42,10 +42,6 @@ class Cacher:
         # Performance tracking
         self.hits = 0  # Total successful cache retrievals
         self.miss = 0  # Total cache misses
-        
-        # Cache state tracking
-        self.continues_hits = 0  # Sequential hit counter
-        self.last_hs = -1  # Last accessed hash key
 
     def query(self, hs:int) -> bool:
         """Check if a hash key exists in the cache.
@@ -78,43 +74,7 @@ class Cacher:
             self.miss += 1
             return None
 
-    def read(self, hs:int) -> np.ndarray:
-        """Retrieve cached data by hash key. Will use anti-thrashing.
-        
-        Args:
-            hs: Hash key of requested data
-            
-        Returns:
-            np.ndarray: Decompressed image data or None if miss
-        """
-        # Check cache existence
-        cached = self.cache.get(hs)
-        
-        # Anti-thrashing: Force miss after 5 sequential hits
-        if self.continues_hits > 5:
-            cached = None
-            
-        if cached is not None:
-            # Update hit tracking
-            if self.last_hs != hs:
-                self.continues_hits += 1  # Increment sequential counter
-            else:
-                self.continues_hits = 0  # Reset if same key
-            self.last_hs = hs
-            self.hits += 1
-            
-            # Promote to MRU position
-            self.cache.move_to_end(hs)
-            
-            result_img = np.frombuffer(brotli.decompress(cached), dtype=np.uint8).reshape((self.height, self.width, 4))
-            return result_img
-        else:
-            # Update miss tracking
-            self.miss += 1
-            self.continues_hits = 0
-            self.last_hs = hs
-            return None
-    def write(self, hs:int, data:np.ndarray):
+    def put(self, hs:int, data:np.ndarray):
         """Write data to cache with compression.
         
         Args:
