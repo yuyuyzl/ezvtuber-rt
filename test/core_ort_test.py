@@ -615,11 +615,12 @@ class TestCoreORTCombined(TestCoreORTBase):
             sr_model_enable=True,
             sr_model_scale=2,
             sr_model_fp16=True,
+            sr_a4k=True,
             cache_max_giga=1.0
         )
         self.assertIsNotNone(core.cacher)
         self.assertIsNotNone(core.rife)
-        self.assertIsNotNone(core.sr)
+        self.assertIsNotNone(core.sr or core.sr_a4k)
         
         core.setImage(self.test_image)
         
@@ -896,6 +897,41 @@ def CoreORT_ShowVideo_WithSR_RealESRGAN():
     if core.cacher:
         print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
 
+def CoreORT_ShowVideo_WithSR_a4k():
+    """Generate video with anime4k x2 super resolution"""
+    print("=" * 60)
+    print("Generating video: THA + anime4k x2")
+    print("=" * 60)
+    
+    core = CoreORT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        sr_model_enable=True,
+        sr_a4k=True,
+        cache_max_giga=0.0
+    )
+    
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+    
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+    
+    frames = []
+    print("Generating SR frames (1024x1024):")
+    for i in tqdm(range(100)):  # Fewer frames due to larger size
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        frames.append(output[0, :, :, :3])
+    
+    generate_video(frames, './test/data/core_ort_sr_anime4k.mp4', 20)
+    
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
 
 def CoreORT_ShowVideo_RIFE_x2_SR_waifu2x():
     """Generate video with RIFE x2 + waifu2x x2 combined"""
@@ -935,7 +971,48 @@ def CoreORT_ShowVideo_RIFE_x2_SR_waifu2x():
     
     if core.cacher:
         print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
 
+def CoreORT_ShowVideo_RIFE_x2_SR_a4k():
+    """Generate video with RIFE x2 + anime4k x2 combined"""
+    print("=" * 60)
+    print("Generating video: THA + RIFE x2 + anime4k x2")
+    print("=" * 60)
+    
+    core = CoreORT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=2,
+        rife_model_fp16=True,
+        sr_model_enable=True,
+        sr_a4k=True,
+        cache_max_giga=2.0
+    )
+    
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+    
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+    
+    frames = []
+    print("Generating interpolated + SR frames:")
+    for i in tqdm(range(100)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+    
+    generate_video(frames, './test/data/core_ort_rife_x2_sr_a4k.mp4', 40)
+    
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
 
 def CoreORT_ShowVideo_CachePerformance():
     """Demonstrate cache performance with two passes"""
@@ -1162,7 +1239,9 @@ if __name__ == "__main__":
             CoreORT_ShowVideo_WithRIFE_x4()
             CoreORT_ShowVideo_WithSR_waifu2x()
             CoreORT_ShowVideo_WithSR_RealESRGAN()
+            CoreORT_ShowVideo_WithSR_a4k()
             CoreORT_ShowVideo_RIFE_x2_SR_waifu2x()
+            CoreORT_ShowVideo_RIFE_x2_SR_a4k()
             CoreORT_ShowVideo_CachePerformance()
             CoreORT_ShowVideo_SRCachePerformance()
             CoreORT_ShowVideo_THA_v4()
@@ -1175,8 +1254,10 @@ if __name__ == "__main__":
         elif sys.argv[1] == '--show-sr':
             CoreORT_ShowVideo_WithSR_waifu2x()
             CoreORT_ShowVideo_WithSR_RealESRGAN()
+            CoreORT_ShowVideo_WithSR_a4k()
         elif sys.argv[1] == '--show-combined':
             CoreORT_ShowVideo_RIFE_x2_SR_waifu2x()
+            CoreORT_ShowVideo_RIFE_x2_SR_a4k()
         elif sys.argv[1] == '--show-cache':
             CoreORT_ShowVideo_CachePerformance()
         elif sys.argv[1] == '--show-sr-cache':

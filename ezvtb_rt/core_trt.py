@@ -8,6 +8,8 @@ import ezvtb_rt
 import numpy as np
 import os
 from typing import List
+import pyanime4k
+import cv2
 
 def has_none_object_none_pattern(lst):
     if len(lst) < 3:
@@ -62,6 +64,7 @@ class CoreTRT:
                  sr_model_enable:bool = False,
                  sr_model_scale:int = 2,
                  sr_model_fp16:bool = False,
+                 sr_a4k:bool = False,
                  vram_cache_size:float = 1.0, 
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
@@ -98,7 +101,7 @@ class CoreTRT:
                                      f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
             
         sr_path = None
-        if sr_model_enable:
+        if sr_model_enable and not sr_a4k:
             if sr_model_scale == 4:
                 if sr_model_fp16:
                     sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16.trt')
@@ -128,6 +131,11 @@ class CoreTRT:
         self.sr: TRTEngine = None    # Super resolution module
         self.cacher: Cacher = None# Output caching system
         self.sr_cacher: Cacher = None # SR output caching
+        self.sr_a4k = pyanime4k.Processor(
+                processor_type="opencl",
+                device=0,
+                model="acnet-gan"
+            ) if sr_a4k else None
         self.last_tha_output: np.ndarray | None = None
 
         # Initialize RIFE if model path provided
@@ -139,9 +147,9 @@ class CoreTRT:
         if sr_path is not None:
             self.sr = TRTEngine(sr_path, 1)
             self.sr.configure_in_out_tensors(rife_model_scale if rife_model_enable else 1)
-            if cache_max_giga > 0.0:
-                # SR outputs are upscaled (expected 1024x1024 RGBA)
-                self.sr_cacher = Cacher(cache_max_giga, width=1024, height=1024)
+        if cache_max_giga > 0.0 and sr_model_enable:
+            # SR outputs are upscaled (expected 1024x1024 RGBA)
+            self.sr_cacher = Cacher(cache_max_giga, width=1024, height=1024)
 
         # Initialize cache if enabled
         if cache_max_giga > 0.0:
@@ -199,7 +207,7 @@ class CoreTRT:
                 self.cacher.put(hash(str(tha_pose)), tha_mem_res.host)
 
         # If no RIFE and no SR, just return THA result
-        if self.rife is None and self.sr is None:
+        if self.rife is None and self.sr is None and self.sr_a4k is None:
             return np.expand_dims(cached_output if cached_output is not None else np.copy(tha_mem_res.host), axis=0)
         
         # RIFE interpolation stage
@@ -239,9 +247,53 @@ class CoreTRT:
             # No RIFE, SR-only uses THA output as a single-frame batch
             rife_mem_res = tha_mem_res
         
-        if self.sr is None:
+        if self.sr is None and self.sr_a4k is None:
             return np.copy(rife_mem_res.host)
+        
+        if self.sr is not None:
+            return self.sr_trt_process(poses, rife_mem_res)
+        else: # self.sr_a4k is not None
+            to_sr_images = rife_mem_res.host if len(rife_mem_res.host.shape) == 4 else np.expand_dims(rife_mem_res.host, axis=0)
+            return self.sr_a4k_process(poses, to_sr_images)
+    
+    def sr_a4k_process(self, poses: List[np.ndarray], to_sr_images: np.ndarray) -> np.ndarray:
+        sr_results = []
+        if len(poses) == 1:
+            for i in range(to_sr_images.shape[0] - 1):
+                sr_results.append(self.a4k_infer_bgra(to_sr_images[i]))
+            hs = hash(str(poses[0]))
+            cached_sr = self.sr_cacher.get(hs) if self.sr_cacher is not None else None
+            if cached_sr is not None:
+                sr_results.append(cached_sr)
+            else:
+                sr_results.append(self.a4k_infer_bgra(to_sr_images[-1]))
+                if self.sr_cacher is not None:
+                    self.sr_cacher.put(hs, sr_results[-1])
+        else:
+            assert to_sr_images.shape[0] == len(poses)
+            for i in range(len(poses)):
+                hs = hash(str(poses[i]))
+                cached_sr = self.sr_cacher.get(hs) if self.sr_cacher is not None else None
+                if cached_sr is not None:
+                    sr_results.append(cached_sr)
+                else:
+                    sr_img = self.a4k_infer_bgra(to_sr_images[i])
+                    sr_results.append(sr_img)
+                    if self.sr_cacher is not None:
+                        self.sr_cacher.put(hs, sr_img)
+        return np.stack(sr_results, axis=0)
 
+    def a4k_infer_bgra(self, img_bgra: np.ndarray) -> np.ndarray:
+        assert self.sr_a4k is not None, "a4k_infer_bgra called but sr_a4k is not initialized"
+        assert len(img_bgra.shape) == 3 and img_bgra.shape[2] == 4, "Input image must be BGRA format"
+        alpha_channel = np.ascontiguousarray(img_bgra[:, :, 3:])  # Preserve alpha channel
+        bgr_channels = np.ascontiguousarray(img_bgra[:, :, :3])
+        sr_bgr = self.sr_a4k.process(bgr_channels)
+        sr_alpha = cv2.resize(alpha_channel, None, fx=2, fy=2)
+        sr_bgra = cv2.merge([sr_bgr, sr_alpha])
+        return sr_bgra
+
+    def sr_trt_process(self, poses: List[np.ndarray], rife_mem_res: HostDeviceMem)-> np.ndarray:
         # Special handling when only one pose was provided
         if len(poses) == 1:
             hs = hash(str(poses[0]))

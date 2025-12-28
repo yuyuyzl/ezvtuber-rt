@@ -1,4 +1,5 @@
 from typing import List, Optional
+import cv2
 import numpy as np
 import os
 from ezvtb_rt.tha3_ort import THA3ORTSessions, THA3ORTNonDefaultSessions
@@ -7,6 +8,7 @@ from ezvtb_rt.tha4_ort import THA4ORTSessions, THA4ORTNonDefaultSessions
 from ezvtb_rt.tha4_student_ort import THA4StudentORTSessions
 import ezvtb_rt
 from ezvtb_rt.ort_utils import createORTSession
+import pyanime4k
 
 class CoreORT:
     def __init__(self,
@@ -20,6 +22,7 @@ class CoreORT:
                  sr_model_enable:bool = False,
                  sr_model_scale:int = 2,
                  sr_model_fp16:bool = False,
+                 sr_a4k:bool = False,
                  vram_cache_size:float = 1.0,
                  cache_max_giga:float = 2.0, 
                  use_eyebrow:bool = False):
@@ -49,7 +52,7 @@ class CoreORT:
                                      f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
             
         sr_path = None
-        if sr_model_enable:
+        if sr_model_enable and not sr_a4k:
             if sr_model_scale == 4:
                 sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', f'exported_256_{ "fp16" if sr_model_fp16 else "fp32"}.onnx')
             else: #x2
@@ -76,6 +79,11 @@ class CoreORT:
         self.rifes: List[ort.InferenceSession] = []
         self.sr: Optional[ort.InferenceSession] = None
         self.sr_cacher: Optional[Cacher] = None
+        self.sr_a4k = pyanime4k.Processor(
+                processor_type="opencl",
+                device=0,
+                model="acnet-gan"
+            ) if sr_a4k else None
         self.cacher: Optional[Cacher] = None
         self.last_tha_output: Optional[np.ndarray] = None
 
@@ -83,8 +91,8 @@ class CoreORT:
             self.rife = createORTSession(rife_path, device_id)
         if sr_path is not None:
             self.sr = createORTSession(sr_path, device_id)
-            if cache_max_giga > 0.0:
-                self.sr_cacher = Cacher(cache_max_giga, width=1024, height=1024)
+        if cache_max_giga > 0.0 and sr_model_enable:
+            self.sr_cacher = Cacher(cache_max_giga, width=1024, height=1024)
         if cache_max_giga > 0.0:
             self.cacher = Cacher(cache_max_giga)
     def setImage(self, img:np.ndarray):
@@ -102,7 +110,7 @@ class CoreORT:
             if self.cacher is not None:
                 self.cacher.put(hash(str(poses[-1])), tha_result)
 
-        if not self.rife and not self.sr: # Only THA
+        if self.rife is None and self.sr is None and self.sr_a4k is None: # Only THA
             return np.expand_dims(tha_result, axis=0)
 
         rife_result: np.ndarray = None
@@ -121,31 +129,39 @@ class CoreORT:
         else:
             rife_result = np.expand_dims(tha_result, axis=0)
 
-        if not self.sr:  # Only RIFE
+        if self.sr is None and self.sr_a4k is None:  # Only RIFE
             return rife_result
         
+        sr_process_func = self.sr_a4k_process if self.sr_a4k is not None else self.sr_onnx_process
         # SR
         if len(poses) == 1: # Only one pose provided, 
             hs = hash(str(poses[-1]))
             cached_sr = self.sr_cacher.get(hs) if self.sr_cacher is not None else None
-            sr_batch = rife_result.shape[0]  if cached_sr is None else rife_result.shape[0] - 1
-            if sr_batch > 0: #Need to run SR on some frames
-                sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: rife_result[:sr_batch]})[0]
-                if self.sr_cacher is not None and cached_sr is None:
-                    self.sr_cacher.put(hs, sr_result[-1])
-                elif cached_sr is not None:
+            sr_batch = rife_result.shape[0]
+            if sr_batch > 1: #Multiple frames
+                if cached_sr is None: # No cached frame
+                    sr_result = sr_process_func(rife_result)
+                    if self.sr_cacher is not None: 
+                        self.sr_cacher.put(hs, sr_result[-1])
+                else: # The last frame is cached
+                    sr_result = sr_process_func(rife_result[:sr_batch -1])
                     sr_result = np.concatenate([sr_result, np.expand_dims(cached_sr, axis=0)], axis=0)
-            else: # The only frame is cached
-                sr_result =  np.expand_dims(cached_sr, axis=0)
-        else:
+            else: # The only frame
+                if cached_sr is not None: # Cached
+                    sr_result =  np.expand_dims(cached_sr, axis=0)
+                else: # Not cached
+                    sr_result = sr_process_func(rife_result)
+                    if self.sr_cacher is not None: 
+                        self.sr_cacher.put(hs, sr_result[-1])
+        else: # Multiple poses provided for multiple frames
             assert len(poses) == rife_result.shape[0]
             all_cached: bool = self.sr_cacher is not None and all(self.sr_cacher.query(hash(str(pose))) for pose in poses)
-            if all_cached:
+            if all_cached: # All frames are cached, this is a quick path
                 sr_result = np.stack([self.sr_cacher.get(hash(str(pose))) for pose in poses], axis=0)
-            else:
-                if self.sr_cacher is None:
-                    sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: rife_result})[0]
-                else:
+            else: # Some frames are not cached
+                if self.sr_cacher is None: # No cacher, process all frames directly
+                    sr_result = sr_process_func(rife_result)
+                else: # With cacher, check each frame
                     sr_result = []
                     to_sr_images = []
                     for i in range(len(poses)):
@@ -158,7 +174,7 @@ class CoreORT:
                             sr_result.append(cached_sr)
                     assert len(to_sr_images) > 0
                     to_sr_images_np = np.stack(to_sr_images, axis=0)
-                    sr_outputs = self.sr.run(None, {self.sr.get_inputs()[0].name: to_sr_images_np})[0]
+                    sr_outputs = sr_process_func(to_sr_images_np)
                     sr_idx = 0
                     for i in range(len(poses)):
                         if sr_result[i] is None:
@@ -167,5 +183,24 @@ class CoreORT:
                             self.sr_cacher.put(hs, sr_outputs[sr_idx])
                             sr_idx += 1
                     sr_result = np.stack(sr_result, axis=0)
+        return sr_result
+    
+    def sr_onnx_process(self, frames:np.ndarray) -> np.ndarray:
+        assert self.sr is not None, "SR ONNX model is not initialized."
+        assert len(frames.shape) == 4, "Input frames should have 4 dimensions (batch, height, width, channels)."
+        sr_result = self.sr.run(None, {self.sr.get_inputs()[0].name: frames})[0]
+        return sr_result
 
+    def sr_a4k_process(self, frames:np.ndarray) -> np.ndarray:
+        assert self.sr_a4k is not None, "Anime4K processor is not initialized."
+        assert len(frames.shape) == 4, "Input frames should have 4 dimensions (batch, height, width, channels)."
+        sr_result = []
+        for i in range(frames.shape[0]):
+            alpha_channel = np.ascontiguousarray(frames[i,:,:,3])  # Preserve alpha channel
+            rgb_channels = np.ascontiguousarray(frames[i,:,:, :3]) # RGB channels
+            processed_rgb = self.sr_a4k.process(rgb_channels)
+            processed_alpha = cv2.resize(alpha_channel, None, fx=2, fy=2)
+            rgba_image = cv2.merge((processed_rgb, processed_alpha))
+            sr_result.append(rgba_image)
+        sr_result = np.stack(sr_result, axis=0)
         return sr_result

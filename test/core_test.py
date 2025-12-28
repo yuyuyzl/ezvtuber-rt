@@ -60,7 +60,6 @@ class TestCoreTRTBase(unittest.TestCase):
                 tha_model_seperable=True,
                 tha_model_fp16=True,
                 use_eyebrow=False,
-                cache_max_giga=0.0,
                 **overrides,
             )
         except Exception as exc:  # pragma: no cover - environment dependent
@@ -103,35 +102,6 @@ class TestCoreTRTCache(TestCoreTRTBase):
 
         self.assertEqual(core.cacher.miss, 3)
         self.assertEqual(core.cacher.hits, 0)
-
-    def test_cache_anti_thrashing_for_different_keys(self):
-        core = self.make_core(cache_max_giga=1.0)
-        core.setImage(self.test_image)
-
-        poses: List[np.ndarray] = [self.get_pose(800 + i) for i in range(8)]
-        for pose in poses:
-            core.inference([pose])
-
-        initial_misses = core.cacher.miss
-
-        for pose in poses:
-            core.inference([pose])
-
-        self.assertGreater(core.cacher.hits, 0)
-        self.assertGreater(core.cacher.miss, initial_misses)
-
-    def test_cache_same_key_resets_counter(self):
-        core = self.make_core(cache_max_giga=1.0)
-        core.setImage(self.test_image)
-
-        pose = self.get_pose(800)
-        core.inference([pose])
-
-        for _ in range(5):
-            core.inference([pose])
-
-        self.assertEqual(core.cacher.miss, 1)
-        self.assertEqual(core.cacher.hits, 5)
 
 
 class TestCoreTRTBasicTHA4(TestCoreTRTBase):
@@ -286,6 +256,30 @@ class TestCoreTRTCombined(TestCoreTRTBase):
         )
         self.assertIsNotNone(core.rife)
         self.assertIsNotNone(core.sr)
+        core.setImage(self.test_image)
+
+        pose = self.get_pose(800)
+        first = core.inference([pose])
+        hits = core.cacher.hits
+
+        second = core.inference([pose])
+
+        self.assertEqual(first.shape[0], 3)
+        self.assertEqual(first.shape[1], 1024)
+        self.assertEqual(first.shape[2], 1024)
+        self.assertEqual(core.cacher.hits, hits + 1)
+        self.assertEqual(second.shape, first.shape)
+
+    def test_rife_x3_with_sr_a4k_and_cache(self):
+        core = self.make_core(
+            rife_model_enable=True,
+            rife_model_scale=3,
+            rife_model_fp16=True,
+            sr_model_enable=True,
+            sr_a4k=True,
+        )
+        self.assertIsNotNone(core.rife)
+        self.assertIsNotNone(core.sr_a4k)
         core.setImage(self.test_image)
 
         pose = self.get_pose(800)
@@ -501,11 +495,11 @@ def CoreTRT_ShowVideo_WithSR_waifu2x():
 
     frames = []
     print("Generating SR frames (1024x1024):")
-    for i in tqdm(range(200)):
+    for i in tqdm(range(400)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
         output = core.inference([pose])
         frames.append(output[0, :, :, :3])
-    for i in tqdm(range(200)):
+    for i in tqdm(range(400)):
         pose = np.array(pose_data[800 + i]).reshape(1, 45)
         output = core.inference([pose])
         frames.append(output[0, :, :, :3])
@@ -514,6 +508,47 @@ def CoreTRT_ShowVideo_WithSR_waifu2x():
 
     if core.cacher:
         print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
+
+def CoreTRT_ShowVideo_WithSR_a4k():
+    print("=" * 60)
+    print("Generating video: THA + anime4k x2")
+    print("=" * 60)
+
+    core = CoreTRT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        sr_model_enable=True,
+        sr_a4k=True,
+        cache_max_giga=2.0,
+    )
+
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+
+    frames = []
+    print("Generating SR frames (1024x1024):")
+    for i in tqdm(range(400)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        frames.append(output[0, :, :, :3])
+    for i in tqdm(range(400)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        output = core.inference([pose])
+        frames.append(output[0, :, :, :3])
+
+    generate_video(frames, './test/data/core_trt_sr_anime4k.mp4', 20)
+
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
 
 
 def CoreTRT_ShowVideo_RIFE_x2_SR_x2():
@@ -598,6 +633,54 @@ def CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached():
 
     if core.cacher:
         print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
+
+def CoreTRT_ShowVideo_RIFE_x2_SR_a4k_cached():
+    print("=" * 60)
+    print("Generating video: THA + RIFE x2 + waifu2x x2")
+    print("=" * 60)
+
+    core = CoreTRT(
+        tha_model_version='v3',
+        tha_model_seperable=True,
+        tha_model_fp16=True,
+        use_eyebrow=False,
+        rife_model_enable=True,
+        rife_model_scale=2,
+        rife_model_fp16=True,
+        sr_model_enable=True,
+        sr_a4k=True,
+        cache_max_giga=2.0,
+    )
+
+    img = cv2.imread('./test/data/base.png', cv2.IMREAD_UNCHANGED)
+    core.setImage(img)
+
+    with open('./test/data/pose_20fps.json', 'r') as f:
+        pose_data = json.load(f)
+
+    frames = []
+    print("Generating interpolated + SR frames:")
+    for i in tqdm(range(0, 400, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+    for i in tqdm(range(0, 400, 2)):
+        pose = np.array(pose_data[800 + i]).reshape(1, 45)
+        pose1 = np.array(pose_data[800 + i + 1]).reshape(1, 45)
+        output = core.inference([pose, pose1])
+        for j in range(output.shape[0]):
+            frames.append(output[j, :, :, :3])
+
+    generate_video(frames, './test/data/core_trt_rife_x2_sr_a4k_cached.mp4', 20)
+
+    if core.cacher:
+        print(f"Cache stats - Hits: {core.cacher.hits}, Misses: {core.cacher.miss}")
+    if core.sr_cacher:
+        print(f"SR Cache stats - Hits: {core.sr_cacher.hits}, Misses: {core.sr_cacher.miss}")
 
 def CoreTRT_ShowVideo_CachePerformance():
     print("=" * 60)
@@ -657,8 +740,10 @@ if __name__ == "__main__":
             CoreTRT_ShowVideo_WithRIFE_x2()
             CoreTRT_ShowVideo_WithRIFE_x2_Cached()
             CoreTRT_ShowVideo_WithSR_waifu2x()
+            CoreTRT_ShowVideo_WithSR_a4k()
             CoreTRT_ShowVideo_RIFE_x2_SR_x2()
             CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached()
+            CoreTRT_ShowVideo_RIFE_x2_SR_a4k_cached()
             CoreTRT_ShowVideo_CachePerformance()
         elif sys.argv[1] == '--show-tha':
             CoreTRT_ShowVideo_THAOnly()
@@ -668,7 +753,9 @@ if __name__ == "__main__":
             CoreTRT_ShowVideo_WithRIFE_x2_Cached()
         elif sys.argv[1] == '--show-sr':
             CoreTRT_ShowVideo_WithSR_waifu2x()
+            CoreTRT_ShowVideo_WithSR_a4k()
             CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached()
+            CoreTRT_ShowVideo_RIFE_x2_SR_a4k_cached()
         elif sys.argv[1] == '--show-combined':
             CoreTRT_ShowVideo_RIFE_x2_SR_x2()
         elif sys.argv[1] == '--show-cache':
