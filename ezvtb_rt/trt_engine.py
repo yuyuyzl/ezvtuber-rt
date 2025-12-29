@@ -144,7 +144,7 @@ class TRTEngine:
         if  n_batch in self.in_out_tensors:
             inputs, outputs = self.in_out_tensors[n_batch]
             if n_batch != self.n_batch:
-                TRT_LOGGER.log(TRT_LOGGER.INFO, f'Reconfiguring tensor addresses for batch size {n_batch}')
+                # TRT_LOGGER.log(TRT_LOGGER.INFO, f'Reconfiguring tensor addresses for batch size {n_batch}')
                 for input_tensor_name, input_mem in zip(self.input_tensor_names, inputs):
                     self.context.set_tensor_address(input_tensor_name, int(input_mem.device))
                     self.context.set_input_shape(input_tensor_name, trt.Dims(input_mem.host.shape))
@@ -157,7 +157,7 @@ class TRTEngine:
                     if shape[i] == -1:
                         shape[i] = n_batch
                 dtype = trt.nptype(self.engine.get_tensor_dtype(input_tensor_name))
-                TRT_LOGGER.log(TRT_LOGGER.INFO, f'Allocating input tensor: {input_tensor_name} with shape {shape} and dtype {dtype}')
+                # TRT_LOGGER.log(TRT_LOGGER.INFO, f'Allocating input tensor: {input_tensor_name} with shape {shape} and dtype {dtype}')
                 mem = HostDeviceMem.create(shape, dtype)
                 self.context.set_tensor_address(input_tensor_name, int(mem.device)) # Use this setup without binding for v3
                 self.context.set_input_shape(input_tensor_name, trt.Dims(shape))
