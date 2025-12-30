@@ -95,10 +95,6 @@ class CoreTRT:
             self.v3 = False
         else:
             raise ValueError('Unsupported THA model version')
-        rife_path = None
-        if rife_model_enable:
-            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
-                                     f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
             
         sr_path = None
         if sr_model_enable and not sr_a4k:
@@ -127,7 +123,8 @@ class CoreTRT:
 
         # Initialize optional components
         self.rife: TRTEngine = None  # Frame interpolation module (default)
-        self.rifes: List[TRTEngine] = []  # Additional RIFE engines for different scales
+        self.smaller_rifes: List[TRTEngine] = []  # Additional RIFE engines for different scales
+        self.rife_model_scale: int = rife_model_scale
         self.sr: TRTEngine = None    # Super resolution module
         self.cacher: Cacher = None# Output caching system
         self.sr_cacher: Cacher = None # SR output caching
@@ -139,9 +136,23 @@ class CoreTRT:
         self.last_tha_output: np.ndarray | None = None
 
         # Initialize RIFE if model path provided
-        if rife_path is not None:
+        if rife_model_enable:
+            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
+                                     f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
             self.rife = TRTEngine(rife_path, 2)
             self.rife.configure_in_out_tensors()
+            if rife_model_scale >= 3:
+                x2_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife',
+                                            f'rife_x2_{"fp16" if rife_model_fp16 else "fp32"}.trt')
+                x2_rife = TRTEngine(x2_rife_path, 2)
+                x2_rife.configure_in_out_tensors()
+                self.smaller_rifes.append(x2_rife)
+            if rife_model_scale == 4:
+                x3_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
+                                            f'rife_x3_{"fp16" if rife_model_fp16 else "fp32"}.trt')
+                x3_rife = TRTEngine(x3_rife_path, 2)
+                x3_rife.configure_in_out_tensors()
+                self.smaller_rifes.append(x3_rife)
 
         # Initialize SR if model path provided
         if sr_path is not None:
@@ -213,34 +224,131 @@ class CoreTRT:
         # RIFE interpolation stage
         rife_mem_res : HostDeviceMem = None
         if self.rife is not None:
-            # Select appropriate RIFE engine based on number of interpolated frames (x2/x3/x4)
             rife_mem_res = self.rife.outputs[0]
-
-            # Fast path: all poses except the last are cached
-            all_cached = len(poses) > 1 and self.cacher is not None and all(self.cacher.query(hash(str(p))) for p in poses[:-1])
-            if all_cached:
-                cached_frames = [self.cacher.get(hash(str(p))) for p in poses[:-1]]
-                for i in range(len(poses) - 1):
-                    np.copyto(rife_mem_res.host[i], cached_frames[i])
-                np.copyto(rife_mem_res.host[-1], tha_mem_res.host)
-                rife_mem_res.htod(self.main_stream)
-            else: # Cases: one pose given but use interpolation, multiple poses with some missing cache, or no cache at all
+            if len(poses) == 1:
                 # Prepare previous frame
                 np.copyto(self.rife.inputs[0].host, self.last_tha_output)
                 self.rife.inputs[0].htod(self.main_stream)
-
                 # Current frame
                 self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
-
                 self.rife.asyncKickoff(self.main_stream)
                 self.rife.outputs[0].dtoh(self.main_stream)
                 self.main_stream.synchronize()
-
-                # Cache interpolated frames when they align with provided poses
-                if len(poses) > 1 and self.cacher is not None and len(poses) == rife_mem_res.host.shape[0]:
-                    for i in range(len(poses) - 1):
+            else:
+                if self.cacher is not None:
+                    cached_rife = [self.cacher.get(hash(str(p))) for p in poses[:-1]]
+                else:
+                    cached_rife = [None] * (len(poses) -1)
+                if all(x is None for x in cached_rife): # No cached frames
+                    # Prepare previous frame
+                    np.copyto(self.rife.inputs[0].host, self.last_tha_output)
+                    self.rife.inputs[0].htod(self.main_stream)
+                    # Current frame
+                    self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
+                    self.rife.asyncKickoff(self.main_stream)
+                    self.rife.outputs[0].dtoh(self.main_stream)
+                    self.main_stream.synchronize()
+                elif all(x is not None for x in cached_rife): # All cached frames
+                    # print('RIFE all frames cached')
+                    rife_result = np.stack(cached_rife + [tha_mem_res.host], axis=0)
+                    np.copyto(rife_mem_res.host, rife_result)
+                    rife_mem_res.htod(self.main_stream)
+                    self.main_stream.synchronize()
+                elif self.rife_model_scale == 3:
+                    # rife x3 one frame missing
+                    # print('RIFE x3 one frame cache miss')
+                    rife_2x = self.smaller_rifes[0]
+                    if cached_rife[0] is None:
+                        # First frame missing
+                        np.copyto(rife_2x.inputs[0].host, self.last_tha_output)
+                        rife_2x.inputs[0].htod(self.main_stream)
+                        np.copyto(rife_2x.inputs[1].host, cached_rife[1])
+                        rife_2x.inputs[1].htod(self.main_stream)
+                        rife_2x.asyncKickoff(self.main_stream)
+                        rife_2x.outputs[0].dtoh(self.main_stream)
+                        self.main_stream.synchronize()
+                        cached_rife[0] = rife_2x.outputs[0].host[0]
+                    else: # cached_rife[1] is None
+                        np.copyto(rife_2x.inputs[0].host, cached_rife[0])
+                        rife_2x.inputs[0].htod(self.main_stream)
+                        rife_2x.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
+                        rife_2x.asyncKickoff(self.main_stream)
+                        rife_2x.outputs[0].dtoh(self.main_stream)
+                        self.main_stream.synchronize()
+                        cached_rife[1] = rife_2x.outputs[0].host[0]
+                    rife_result = np.stack(cached_rife + [tha_mem_res.host], axis=0)
+                    np.copyto(rife_mem_res.host, rife_result)
+                    rife_mem_res.htod(self.main_stream)
+                    self.main_stream.synchronize()
+                elif self.rife_model_scale == 4:
+                    # One or two frames missing with rife x4
+                    rife_x2 = self.smaller_rifes[0]
+                    rife_x3 = self.smaller_rifes[1]
+                    cached_rife = [self.last_tha_output] + cached_rife + [tha_mem_res.host]
+                    number_of_missing = sum(1 for x in cached_rife if x is None)
+                    if number_of_missing == 1: # Only one frame is not cached
+                        # print('RIFE x4 one frame cache miss')
+                        missing_index = -1
+                        for i in range(len(cached_rife)):
+                            if cached_rife[i] is None:
+                                missing_index = i
+                                break
+                        np.copyto(rife_x2.inputs[0].host, cached_rife[missing_index -1])
+                        rife_x2.inputs[0].htod(self.main_stream)
+                        np.copyto(rife_x2.inputs[1].host, cached_rife[missing_index +1])
+                        rife_x2.inputs[1].htod(self.main_stream)
+                        rife_x2.asyncKickoff(self.main_stream)
+                        rife_x2.outputs[0].dtoh(self.main_stream)
+                        self.main_stream.synchronize()
+                        cached_rife[missing_index] = rife_x2.outputs[0].host[0]
+                    elif number_of_missing == 2:
+                        # print('RIFE x4 two frames cache miss')
+                        if cached_rife[2] is not None:
+                            np.copyto(rife_x2.inputs[0].host, cached_rife[0])
+                            rife_x2.inputs[0].htod(self.main_stream)
+                            np.copyto(rife_x2.inputs[1].host, cached_rife[2])
+                            rife_x2.inputs[1].htod(self.main_stream)
+                            rife_x2.asyncKickoff(self.main_stream)
+                            rife_x2.outputs[0].dtoh(self.main_stream)
+                            self.main_stream.synchronize()
+                            cached_rife[1] = rife_x2.outputs[0].host[0]
+                            np.copyto(rife_x2.inputs[0].host, cached_rife[2])
+                            rife_x2.inputs[0].htod(self.main_stream)
+                            np.copyto(rife_x2.inputs[1].host, cached_rife[4])
+                            rife_x2.inputs[1].htod(self.main_stream)
+                            rife_x2.asyncKickoff(self.main_stream)
+                            rife_x2.outputs[0].dtoh(self.main_stream)
+                            self.main_stream.synchronize()
+                            cached_rife[3] = rife_x2.outputs[0].host[0]
+                        elif cached_rife[1] is not None:
+                            np.copyto(rife_x3.inputs[0].host, cached_rife[1])
+                            rife_x3.inputs[0].htod(self.main_stream)
+                            np.copyto(rife_x3.inputs[1].host, cached_rife[4])
+                            rife_x3.inputs[1].htod(self.main_stream)
+                            rife_x3.asyncKickoff(self.main_stream)
+                            rife_x3.outputs[0].dtoh(self.main_stream)
+                            self.main_stream.synchronize()
+                            cached_rife[2] = rife_x3.outputs[0].host[0]
+                            cached_rife[3] = rife_x3.outputs[0].host[1]
+                        else: # cached_rife[3] is not None
+                            np.copyto(rife_x3.inputs[0].host, cached_rife[0])
+                            rife_x3.inputs[0].htod(self.main_stream)
+                            np.copyto(rife_x3.inputs[1].host, cached_rife[3])
+                            rife_x3.inputs[1].htod(self.main_stream)
+                            rife_x3.asyncKickoff(self.main_stream)
+                            rife_x3.outputs[0].dtoh(self.main_stream)
+                            self.main_stream.synchronize()
+                            cached_rife[1] = rife_x3.outputs[0].host[0]
+                            cached_rife[2] = rife_x3.outputs[0].host[1]
+                    else:
+                        raise ValueError('RIFE x4 more than two missing frames not supported')
+                    rife_result = np.stack(cached_rife[1:], axis=0)
+                    np.copyto(rife_mem_res.host, rife_result)
+                    rife_mem_res.htod(self.main_stream)
+                    self.main_stream.synchronize()
+                if self.cacher is not None:
+                    for i in range(1, len(poses) -1):
                         self.cacher.put(hash(str(poses[i])), rife_mem_res.host[i])
-
             # Track last THA output for future interpolation
             self.last_tha_output = np.copy(tha_mem_res.host)
         else:
