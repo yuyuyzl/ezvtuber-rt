@@ -31,20 +31,10 @@ class THA4StudentEngines():
             model_dir: Directory containing TensorRT engine files
             vram_cache_size: Total GPU memory for caching (MB)
         """
-        face_morpher_trt_path = join(model_dir, 'face_morpher.trt')
-        body_morpher_trt_path = join(model_dir, 'body_morpher.trt') 
-        if not os.path.isfile(face_morpher_trt_path) or not os.path.isfile(body_morpher_trt_path):
-            face_morpher_onnx_path = join(model_dir, 'face_morpher.onnx')
-            body_morpher_onnx_path = join(model_dir, 'body_morpher.onnx')
-            if not os.path.isfile(face_morpher_onnx_path) or \
-               not os.path.isfile(body_morpher_onnx_path):
-                raise FileNotFoundError('Required model files not found in directory')
-            save_engine(build_engine(face_morpher_onnx_path, precision='fp16'), face_morpher_trt_path)
-            save_engine(build_engine(body_morpher_onnx_path, precision='fp16'), body_morpher_trt_path)
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        self.face_morpher = TRTEngine(join(model_dir, 'face_morpher.trt'), 1)
+        self.face_morpher = TRTEngine(join(model_dir, 'face_morpher.onnx'), 1)
         self.face_morpher.configure_in_out_tensors()
-        self.body_morpher = TRTEngine(join(model_dir, 'body_morpher.trt'), 3)
+        self.body_morpher = TRTEngine(join(model_dir, 'body_morpher.onnx'), 3)
         self.body_morpher.configure_in_out_tensors()
 
         # Create CUDA streams

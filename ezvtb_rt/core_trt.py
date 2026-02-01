@@ -100,14 +100,14 @@ class CoreTRT:
         if sr_model_enable and not sr_a4k:
             if sr_model_scale == 4:
                 if sr_model_fp16:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16.trt')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp16.onnx')
                 else:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp32.trt')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'Real-ESRGAN', 'exported_256_fp32.onnx')
             else: #x2
                 if sr_model_fp16:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp16.trt')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp16.onnx')
                 else:
-                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp32.trt')
+                    sr_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'waifu2x', 'noise0_scale2x_fp32.onnx')
 
         # Initialize core THA face model
         if self.v3:
@@ -138,18 +138,18 @@ class CoreTRT:
         # Initialize RIFE if model path provided
         if rife_model_enable:
             rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
-                                     f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.trt')
+                                     f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
             self.rife = TRTEngine(rife_path, 2)
             self.rife.configure_in_out_tensors()
             if rife_model_scale >= 3:
                 x2_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife',
-                                            f'rife_x2_{"fp16" if rife_model_fp16 else "fp32"}.trt')
+                                            f'rife_x2_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
                 x2_rife = TRTEngine(x2_rife_path, 2)
                 x2_rife.configure_in_out_tensors()
                 self.smaller_rifes.append(x2_rife)
             if rife_model_scale == 4:
                 x3_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
-                                            f'rife_x3_{"fp16" if rife_model_fp16 else "fp32"}.trt')
+                                            f'rife_x3_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
                 x3_rife = TRTEngine(x3_rife_path, 2)
                 x3_rife.configure_in_out_tensors()
                 self.smaller_rifes.append(x3_rife)
@@ -227,7 +227,7 @@ class CoreTRT:
             rife_mem_res = self.rife.outputs[0]
             if len(poses) == 1:
                 # Prepare previous frame
-                np.copyto(self.rife.inputs[0].host, self.last_tha_output)
+                np.copyto(self.rife.inputs[0].host, np.expand_dims(self.last_tha_output, axis=0))
                 self.rife.inputs[0].htod(self.main_stream)
                 # Current frame
                 self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
@@ -241,7 +241,7 @@ class CoreTRT:
                     cached_rife = [None] * (len(poses) -1)
                 if all(x is None for x in cached_rife): # No cached frames
                     # Prepare previous frame
-                    np.copyto(self.rife.inputs[0].host, self.last_tha_output)
+                    np.copyto(self.rife.inputs[0].host, np.expand_dims(self.last_tha_output, axis=0))
                     self.rife.inputs[0].htod(self.main_stream)
                     # Current frame
                     self.rife.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
@@ -260,16 +260,16 @@ class CoreTRT:
                     rife_2x = self.smaller_rifes[0]
                     if cached_rife[0] is None:
                         # First frame missing
-                        np.copyto(rife_2x.inputs[0].host, self.last_tha_output)
+                        np.copyto(rife_2x.inputs[0].host, np.expand_dims(self.last_tha_output, axis=0))
                         rife_2x.inputs[0].htod(self.main_stream)
-                        np.copyto(rife_2x.inputs[1].host, cached_rife[1])
+                        np.copyto(rife_2x.inputs[1].host, np.expand_dims(cached_rife[1], axis=0))
                         rife_2x.inputs[1].htod(self.main_stream)
                         rife_2x.asyncKickoff(self.main_stream)
                         rife_2x.outputs[0].dtoh(self.main_stream)
                         self.main_stream.synchronize()
                         cached_rife[0] = rife_2x.outputs[0].host[0]
                     else: # cached_rife[1] is None
-                        np.copyto(rife_2x.inputs[0].host, cached_rife[0])
+                        np.copyto(rife_2x.inputs[0].host, np.expand_dims(cached_rife[0], axis=0))
                         rife_2x.inputs[0].htod(self.main_stream)
                         rife_2x.inputs[1].bridgeFrom(tha_mem_res, self.main_stream)
                         rife_2x.asyncKickoff(self.main_stream)
@@ -293,9 +293,9 @@ class CoreTRT:
                             if cached_rife[i] is None:
                                 missing_index = i
                                 break
-                        np.copyto(rife_x2.inputs[0].host, cached_rife[missing_index -1])
+                        np.copyto(rife_x2.inputs[0].host, np.expand_dims(cached_rife[missing_index -1], axis=0))
                         rife_x2.inputs[0].htod(self.main_stream)
-                        np.copyto(rife_x2.inputs[1].host, cached_rife[missing_index +1])
+                        np.copyto(rife_x2.inputs[1].host, np.expand_dims(cached_rife[missing_index +1], axis=0))
                         rife_x2.inputs[1].htod(self.main_stream)
                         rife_x2.asyncKickoff(self.main_stream)
                         rife_x2.outputs[0].dtoh(self.main_stream)
@@ -304,26 +304,26 @@ class CoreTRT:
                     elif number_of_missing == 2:
                         # print('RIFE x4 two frames cache miss')
                         if cached_rife[2] is not None:
-                            np.copyto(rife_x2.inputs[0].host, cached_rife[0])
+                            np.copyto(rife_x2.inputs[0].host, np.expand_dims(cached_rife[0], axis=0))
                             rife_x2.inputs[0].htod(self.main_stream)
-                            np.copyto(rife_x2.inputs[1].host, cached_rife[2])
+                            np.copyto(rife_x2.inputs[1].host, np.expand_dims(cached_rife[2], axis=0))
                             rife_x2.inputs[1].htod(self.main_stream)
                             rife_x2.asyncKickoff(self.main_stream)
                             rife_x2.outputs[0].dtoh(self.main_stream)
                             self.main_stream.synchronize()
                             cached_rife[1] = rife_x2.outputs[0].host[0]
-                            np.copyto(rife_x2.inputs[0].host, cached_rife[2])
+                            np.copyto(rife_x2.inputs[0].host, np.expand_dims(cached_rife[2], axis=0))
                             rife_x2.inputs[0].htod(self.main_stream)
-                            np.copyto(rife_x2.inputs[1].host, cached_rife[4])
+                            np.copyto(rife_x2.inputs[1].host, np.expand_dims(cached_rife[4], axis=0))
                             rife_x2.inputs[1].htod(self.main_stream)
                             rife_x2.asyncKickoff(self.main_stream)
                             rife_x2.outputs[0].dtoh(self.main_stream)
                             self.main_stream.synchronize()
                             cached_rife[3] = rife_x2.outputs[0].host[0]
                         elif cached_rife[1] is not None:
-                            np.copyto(rife_x3.inputs[0].host, cached_rife[1])
+                            np.copyto(rife_x3.inputs[0].host, np.expand_dims(cached_rife[1], axis=0))
                             rife_x3.inputs[0].htod(self.main_stream)
-                            np.copyto(rife_x3.inputs[1].host, cached_rife[4])
+                            np.copyto(rife_x3.inputs[1].host, np.expand_dims(cached_rife[4], axis=0))
                             rife_x3.inputs[1].htod(self.main_stream)
                             rife_x3.asyncKickoff(self.main_stream)
                             rife_x3.outputs[0].dtoh(self.main_stream)
@@ -331,9 +331,9 @@ class CoreTRT:
                             cached_rife[2] = rife_x3.outputs[0].host[0]
                             cached_rife[3] = rife_x3.outputs[0].host[1]
                         else: # cached_rife[3] is not None
-                            np.copyto(rife_x3.inputs[0].host, cached_rife[0])
+                            np.copyto(rife_x3.inputs[0].host, np.expand_dims(cached_rife[0], axis=0))
                             rife_x3.inputs[0].htod(self.main_stream)
-                            np.copyto(rife_x3.inputs[1].host, cached_rife[3])
+                            np.copyto(rife_x3.inputs[1].host, np.expand_dims(cached_rife[3], axis=0))
                             rife_x3.inputs[1].htod(self.main_stream)
                             rife_x3.asyncKickoff(self.main_stream)
                             rife_x3.outputs[0].dtoh(self.main_stream)

@@ -9,11 +9,11 @@ from typing import Tuple, Optional
 class THA3EnginesSimple():
     def __init__(self, model_dir):
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        self.decomposer = TRTEngine(join(model_dir, 'decomposer.trt'), 1)
-        self.combiner = TRTEngine(join(model_dir, 'combiner.trt'), 4)
-        self.morpher = TRTEngine(join(model_dir, 'morpher.trt'), 4)
-        self.rotator = TRTEngine(join(model_dir, 'rotator.trt'), 2)
-        self.editor = TRTEngine(join(model_dir, 'editor.trt'), 4)
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.onnx'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.onnx'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.onnx'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.onnx'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.onnx'), 4)
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
         self.morpher.configure_in_out_tensors()
@@ -86,11 +86,11 @@ class THA3Engines():
             use_eyebrow (bool): Enable eyebrow pose processing
         """
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        self.decomposer = TRTEngine(join(model_dir, 'decomposer.trt'), 1)
-        self.combiner = TRTEngine(join(model_dir, 'combiner.trt'), 4)
-        self.morpher = TRTEngine(join(model_dir, 'morpher.trt'), 4)
-        self.rotator = TRTEngine(join(model_dir, 'rotator.trt'), 2)
-        self.editor = TRTEngine(join(model_dir, 'editor.trt'), 4)
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.onnx'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.onnx'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.onnx'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.onnx'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.onnx'), 4)
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
         self.morpher.configure_in_out_tensors()

@@ -125,14 +125,14 @@ class CoreORT:
         rife_result: np.ndarray = None
         if self.rife is not None: # RIFE
             if len(poses) == 1:
-                rife_result = self.rife.run(None, {'tha_img_0': self.last_tha_output, 'tha_img_1': tha_result})[0]
+                rife_result = self.rife.run(None, {'tha_img_0': np.expand_dims(self.last_tha_output, axis=0), 'tha_img_1': np.expand_dims(tha_result, axis=0)})[0]
             else: # Multiple poses provided
                 if self.cacher:
                     cached_rife = [self.cacher.get(hash(str(p))) for p in poses[:-1]]
                 else:
                     cached_rife = [None] * (len(poses) -1)
                 if all(x is None for x in cached_rife): # No cached frames
-                    rife_result = self.rife.run(None, {'tha_img_0': self.last_tha_output, 'tha_img_1': tha_result})[0]
+                    rife_result = self.rife.run(None, {'tha_img_0': np.expand_dims(self.last_tha_output, axis=0), 'tha_img_1': np.expand_dims(tha_result, axis=0)})[0]
                 elif all(x is not None for x in cached_rife): # All cached frames
                     # print('RIFE all frames cached')
                     rife_result = np.stack(cached_rife + [tha_result], axis=0)
@@ -140,10 +140,10 @@ class CoreORT:
                     # One frame is not cached
                     rife_x2 = self.smaller_rifes[0]
                     if cached_rife[0] is None:
-                        rife_x2_result = rife_x2.run(None, {'tha_img_0': self.last_tha_output, 'tha_img_1': cached_rife[1]})[0]
+                        rife_x2_result = rife_x2.run(None, {'tha_img_0': np.expand_dims(self.last_tha_output, axis=0), 'tha_img_1': np.expand_dims(cached_rife[1], axis=0)})[0]
                         cached_rife[0] = rife_x2_result[0]
                     else:
-                        rife_x2_result = rife_x2.run(None, {'tha_img_0': cached_rife[0], 'tha_img_1': tha_result})[0]
+                        rife_x2_result = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[0], axis=0), 'tha_img_1': np.expand_dims(tha_result, axis=0)})[0]
                         cached_rife[1] = rife_x2_result[0]
                     rife_result = np.stack(cached_rife + [tha_result], axis=0)
                 elif self.rife_model_scale == 4:
@@ -159,20 +159,20 @@ class CoreORT:
                             if cached_rife[i] is None:
                                 missing_index = i
                                 break
-                        rife_x2_result = rife_x2.run(None, {'tha_img_0': cached_rife[i-1], 'tha_img_1': cached_rife[i+1]})[0]
+                        rife_x2_result = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[i-1]), 'tha_img_1': np.expand_dims(cached_rife[i+1])})[0]
                         cached_rife[missing_index] = rife_x2_result[0]
                         rife_result = np.stack(cached_rife[1:], axis=0)
                     elif number_of_missing == 2:
                         # print('RIFE x4 two frames cache miss')
                         if cached_rife[2] is not None:
-                            cached_rife[1] = rife_x2.run(None, {'tha_img_0': cached_rife[0], 'tha_img_1': cached_rife[2]})[0][0]
-                            cached_rife[3] = rife_x2.run(None, {'tha_img_0': cached_rife[2], 'tha_img_1': cached_rife[4]})[0][0]
+                            cached_rife[1] = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[0], axis=0), 'tha_img_1': np.expand_dims(cached_rife[2], axis=0)})[0][0]
+                            cached_rife[3] = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[2], axis=0), 'tha_img_1': np.expand_dims(cached_rife[4], axis=0)})[0][0]
                         elif cached_rife[1] is not None:
-                            rife_x3_result = rife_x3.run(None, {'tha_img_0': cached_rife[1], 'tha_img_1': cached_rife[4]})[0]
+                            rife_x3_result = rife_x3.run(None, {'tha_img_0': np.expand_dims(cached_rife[1], axis=0), 'tha_img_1': np.expand_dims(cached_rife[4], axis=0)})[0]
                             cached_rife[2] = rife_x3_result[0]
                             cached_rife[3] = rife_x3_result[1]
                         else: # cached_rife[3] is not None
-                            rife_x3_result = rife_x3.run(None, {'tha_img_0': cached_rife[0], 'tha_img_1': cached_rife[3]})[0]
+                            rife_x3_result = rife_x3.run(None, {'tha_img_0': np.expand_dims(cached_rife[0], axis=0), 'tha_img_1': np.expand_dims(cached_rife[3], axis=0)})[0]
                             cached_rife[1] = rife_x3_result[0]
                             cached_rife[2] = rife_x3_result[1]
                         rife_result = np.stack(cached_rife[1:], axis=0)

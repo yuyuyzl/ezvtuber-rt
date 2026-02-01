@@ -36,7 +36,7 @@ class HostDeviceMem(object):
         cuda.memcpy_htod_async(self.device, self.host, stream)
 
     def bridgeFrom(self, other: 'HostDeviceMem', stream:cuda.Stream):
-        assert self.host.nbytes == other.host.nbytes, "Memory sizes must match for bridging"
+        assert self.host.nbytes == other.host.nbytes, f"Memory sizes must match for bridging, dst: {self.host.nbytes}, src: {other.host.nbytes}, dst shape: {self.host.shape}, src shape: {other.host.shape}"
         cuda.memcpy_dtod_async(self.device, other.device, self.host.nbytes, stream)
 
 
@@ -49,7 +49,9 @@ class TRTEngine:
         self.engine: trt.ICudaEngine = engine
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating inference context')
         # create execution context
-        self.context: trt.IExecutionContext = engine.create_execution_context()
+        runtime_config = engine.create_runtime_config()
+        runtime_config.cuda_graph_strategy = trt.CudaGraphStrategy.WHOLE_GRAPH_CAPTURE
+        self.context: trt.IExecutionContext = engine.create_execution_context(runtime_config)
         self.n_batch: int = -1
         self.in_out_tensors: dict = {}
         self.inputs: List[HostDeviceMem] = []

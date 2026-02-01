@@ -2,19 +2,21 @@
 
 This guide explains how to install `ezvtuber-rt` as a Python library.
 
-## Install VS2022+ from Microsoft or install pycuda prebuilt
-
-You should be able to find other resource on how to install with VC++ build support. This is necessary for building and installing `pycuda` package. To avoid doing that, you can install conda prebuilt like this in your env prior to other step:  
+## Download TensorRT-RTX
 ```bash
-conda install conda-forge::pycuda
+curl -L -o trt_rtx.zip https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.3/TensorRT-RTX-1.3.0.35-win10-amd64-cuda-12.9-Release-external.zip
+tar -xf trt_rtx.zip "TensorRT-RTX-1.3.0.35" && ren "TensorRT-RTX-1.3.0.35" "TensorRT-RTX-1.3.0.35_cu129"
+# Adding the bin folder to PATH
+cd TensorRT-RTX-1.3.0.35_cu129\bin && set PATH=%CD%;%PATH%
 ```
-## Installation Methods
 
+## Installation Methods
+You need to install Anaconda beforehead and prepare a Python3.10 Environment
 ```bash
 git clone https://github.com/zpeng11/ezvtuber-rt.git && cd ezvtuber-rt
-conda install -c nvidia/label/cuda-12.9.1 cuda-nvcc-dev_win-64 cudnn # You may want to chose a proper version
-pip install tensorrt_cu12_libs==10.11.0.33 tensorrt_cu12_bindings==10.11.0.33 tensorrt==10.11.0.33 --extra-index-url https://pypi.nvidia.com #need to fit with cuda-toolkit version
-pip install . #This will require a VS2022+ dev environment to build pycuda
+conda install conda-forge::pycuda
+conda install -c nvidia/label/cuda-12.9.1 cuda-nvcc-dev_win-64 cudnn cuda-runtime # You 
+pip install . 
 ```
 
 You can also do development install, requirements are the same
@@ -62,8 +64,6 @@ from ezvtb_rt.trt_utils import check_build_all_models()
 
 # Initialize the model path
 init_model_path('C:/Path/To/Model/Folder')
-
-check_build_all_models() #Necesarry for each device/GPU, only run once per-install
 
 # Initialize the core with TensorRT backend
 core = CoreTRT()

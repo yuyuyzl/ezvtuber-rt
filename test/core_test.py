@@ -603,7 +603,7 @@ def CoreTRT_ShowVideo_RIFE_x2_SR_x2_cached():
         rife_model_scale=2,
         rife_model_fp16=True,
         sr_model_enable=True,
-        sr_model_scale=2,
+        sr_model_scale=4,
         sr_model_fp16=True,
         cache_max_giga=2.0,
     )

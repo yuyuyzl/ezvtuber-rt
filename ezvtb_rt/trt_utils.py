@@ -1,13 +1,14 @@
 from pathlib import Path
 import os
 import numpy as np
-import tensorrt as trt
+import tensorrt_rtx as trt
 from typing import List, Dict, Tuple
 import pycuda.driver as cuda
 from os.path import join
 import numpy
 from tqdm import tqdm
 from ezvtb_rt.init_utils import check_exist_all_models
+import tempfile
 
 TRT_LOGGER = trt.Logger(trt.Logger.INFO)
 
@@ -21,31 +22,7 @@ def cudaSetDevice(device_idx):
         error_string = libcudart.cudaGetErrorString(ret)
         raise RuntimeError("cudaSetDevice: " + str(error_string))
 
-def check_build_all_models():
-    all_models_list = check_exist_all_models()
-    #Check TRT support
-    print('Start testing if TensorRT works on this machine')
-    for fullpath in tqdm(all_models_list):
-        dir, filename = os.path.split(fullpath)
-        trt_filename = filename.split('.')[0] + '.trt'
-        trt_fullpath = os.path.join(dir, trt_filename)
-        if os.path.isfile(trt_fullpath):
-            try:
-                if load_engine(trt_fullpath) is not None:
-                    continue
-                else:
-                    print(f'Can not successfully load {trt_fullpath}, build again')
-            except:
-                print(f'Can not successfully load {trt_fullpath}, build again')
-        dtype = 'fp16' if 'fp16' in fullpath else 'fp32'
-        engine_seri = build_engine(fullpath, dtype)
-        if engine_seri is None:
-            print('Error while building engine')
-            return False
-        save_engine(engine_seri, trt_fullpath)
-
-
-def build_engine(onnx_file_path:str, precision:str = 'fp16') -> bytes:
+def build_engine(onnx_file_path:str) -> bytes:
     builder = trt.Builder(TRT_LOGGER)
     network = builder.create_network()
     config = builder.create_builder_config()
@@ -66,16 +43,8 @@ def build_engine(onnx_file_path:str, precision:str = 'fp16') -> bytes:
         return val * 1 << 30
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, GiB(4)) # 4G
     config.tiling_optimization_level = trt.TilingOptimizationLevel.FULL
-    
-    if precision == 'fp32':
-        config.set_flag(trt.BuilderFlag.TF32)
-    elif precision == 'fp16':
-        config.set_flag(trt.BuilderFlag.FP16)
-    elif precision == 'int8':
-        config.set_flag(trt.BuilderFlag.FP16)
-        config.set_flag(trt.BuilderFlag.INT8)
-    else:
-        raise ValueError('precision must be one of fp32 or fp16')
+    config.num_compute_capabilities = 1
+    config.set_compute_capability(trt.ComputeCapability.CURRENT, 0)
     
     def is_dynamic_shape()->bool:
         for i in range(network.num_inputs):
@@ -116,6 +85,19 @@ def save_engine(engine, path):
     TRT_LOGGER.log(TRT_LOGGER.INFO, 'Completed saving engine')
 
 def load_engine(path):
+    if path.endswith('.onnx'):
+        # Create a cache directory in system temp
+        cache_dir = os.path.join(tempfile.gettempdir(), 'ezvtuber_rt_engines')
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Generate cache filename from ONNX path (hash or based on filename)
+        onnx_name = os.path.splitext(os.path.basename(path))[0]
+        engine_path = os.path.join(cache_dir, f'{onnx_name}.trt')
+
+        TRT_LOGGER.log(TRT_LOGGER.INFO, f'Building engine from ONNX: {path}')
+        engine = build_engine(path)
+        save_engine(engine, engine_path)
+        path = engine_path  # Use cached engine
     TRT_LOGGER.log(TRT_LOGGER.WARNING, f'Loading engine from file {path}')
     runtime = trt.Runtime(TRT_LOGGER)
     with open(path, 'rb') as f:
