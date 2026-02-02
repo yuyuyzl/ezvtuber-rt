@@ -159,7 +159,7 @@ class CoreORT:
                             if cached_rife[i] is None:
                                 missing_index = i
                                 break
-                        rife_x2_result = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[i-1]), 'tha_img_1': np.expand_dims(cached_rife[i+1])})[0]
+                        rife_x2_result = rife_x2.run(None, {'tha_img_0': np.expand_dims(cached_rife[i-1], axis=0), 'tha_img_1': np.expand_dims(cached_rife[i+1], axis=0)})[0]
                         cached_rife[missing_index] = rife_x2_result[0]
                         rife_result = np.stack(cached_rife[1:], axis=0)
                     elif number_of_missing == 2:
