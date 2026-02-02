@@ -39,9 +39,9 @@ Currently supporting AMD and Intel GPU by DirectML execution provider of OnnxRun
 A卡和I卡使用OnnxRuntime 提供的DirectML支持，可用但因为Python接口不完善有诸多限制，此实现并非本项目主要实现方向，仅提供入门支持，请自行斟酌。
 
 ### Cache
-Updated cache structure, provide VRAM+RAM solutions for caching results effectively lower down GPU resource comsumption. Use FFmpeg's HuffYUV codec to save space.
+Updated cache structure, provide VRAM+RAM solutions for caching results effectively lower down GPU resource comsumption. Use brotli compression to save space.
 
-实现显存，内存缓存器，有效减少gpu计算和显存占用。使用LGPL FFmpeg的HuffYUV实现快速图像压缩解压减少储存压力。
+实现显存，内存缓存器，有效减少gpu计算和显存占用。使用brotli实现快速图像压缩解压减少储存压力。
 
 
 ### RIFE
@@ -62,7 +62,7 @@ Please download converted models from the following link. You should be noticed 
 
 Please download and extract to `/data` folder for algorithm to run.
 
-[Click here for download!](https://github.com/zpeng11/ezvtuber-rt/releases/download/0.0.1/20241220.zip)
+[Click here for download!](https://drive.google.com/file/d/1pWKIpjWeqfpa3Rub185FVvxDr5H09pOi/view?usp=drive_link)
 
 ## INT8 Quantization Research
 By using PTQ(Post training quantization) methods, I calibrated and quantized THA3 model with ONNX Runtime quantization and Nvidia Model Optimizer. I worked on seperable fp16 models, and found that combiner and decomposer are good with quantization into INT8 with negligible error. However these two models are not frequently called in inference stage and so does not accelerate our Ezvtb core. Among morpher, rotator, and editor, I found that INT8 quantization causes huge error probably becauses of attention machanism. The only exception is that editor could work with qdq quantize mode only on Conv Layers of downsampling and upsampling stages, which brings partial quantization to ~20 Conv layers and introduced visible decline in generation quality. By comparing performance on Nvidia Nsight Visual Profiler, I found that partial quantization of editor did not bring noticable acceleration to my RTX3060 GPU in overall execution. 
