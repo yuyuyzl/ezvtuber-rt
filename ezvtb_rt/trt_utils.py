@@ -3,7 +3,6 @@ import os
 import numpy as np
 import tensorrt_rtx as trt
 from typing import List, Dict, Tuple
-from concurrent.futures import ThreadPoolExecutor
 import pycuda.driver as cuda
 from os.path import join
 import numpy
@@ -105,28 +104,3 @@ def load_engine(path):
         engine = runtime.deserialize_cuda_engine(f.read())
     TRT_LOGGER.log(TRT_LOGGER.INFO, 'Completed loading engine')
     return engine
-
-
-def _load_one_spec(spec: Tuple[str, int]):
-    """单条加载：spec = (path, n_input)，返回 (engine, n_input)。用于并行加载时保持顺序。"""
-    path, n_input = spec
-    engine = load_engine(path)
-    return (engine, n_input)
-
-
-def load_engines_parallel(specs: List[Tuple[str, int]], max_workers: int = None) -> List[Tuple[trt.ICudaEngine, int]]:
-    """并行加载多个 TensorRT engine，保持与 specs 相同顺序返回。
-
-    specs: [(path, n_input), ...]
-    max_workers: 线程数，默认 min(4, len(specs))。若存在 .onnx 且会触发 build，可适当调小以免多路同时 build 占满显存。
-    返回: [(engine, n_input), ...]，与 specs 一一对应。
-    """
-    if not specs:
-        return []
-    n = len(specs)
-    if max_workers is None:
-        max_workers = min(4, n)
-    if n == 1:
-        return [_load_one_spec(specs[0])]
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(_load_one_spec, specs))

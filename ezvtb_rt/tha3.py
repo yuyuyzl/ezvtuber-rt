@@ -9,19 +9,11 @@ from typing import Tuple, Optional
 class THA3EnginesSimple():
     def __init__(self, model_dir):
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        specs = [
-            (join(model_dir, 'decomposer.onnx'), 1),
-            (join(model_dir, 'combiner.onnx'), 4),
-            (join(model_dir, 'morpher.onnx'), 4),
-            (join(model_dir, 'rotator.onnx'), 2),
-            (join(model_dir, 'editor.onnx'), 4),
-        ]
-        engines = load_engines_parallel(specs)
-        self.decomposer = TRTEngine(engines[0][0], engines[0][1])
-        self.combiner = TRTEngine(engines[1][0], engines[1][1])
-        self.morpher = TRTEngine(engines[2][0], engines[2][1])
-        self.rotator = TRTEngine(engines[3][0], engines[3][1])
-        self.editor = TRTEngine(engines[4][0], engines[4][1])
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.onnx'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.onnx'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.onnx'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.onnx'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.onnx'), 4)
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
         self.morpher.configure_in_out_tensors()
@@ -94,19 +86,11 @@ class THA3Engines():
             use_eyebrow (bool): Enable eyebrow pose processing
         """
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        specs = [
-            (join(model_dir, 'decomposer.onnx'), 1),
-            (join(model_dir, 'combiner.onnx'), 4),
-            (join(model_dir, 'morpher.onnx'), 4),
-            (join(model_dir, 'rotator.onnx'), 2),
-            (join(model_dir, 'editor.onnx'), 4),
-        ]
-        engines = load_engines_parallel(specs)
-        self.decomposer = TRTEngine(engines[0][0], engines[0][1])
-        self.combiner = TRTEngine(engines[1][0], engines[1][1])
-        self.morpher = TRTEngine(engines[2][0], engines[2][1])
-        self.rotator = TRTEngine(engines[3][0], engines[3][1])
-        self.editor = TRTEngine(engines[4][0], engines[4][1])
+        self.decomposer = TRTEngine(join(model_dir, 'decomposer.onnx'), 1)
+        self.combiner = TRTEngine(join(model_dir, 'combiner.onnx'), 4)
+        self.morpher = TRTEngine(join(model_dir, 'morpher.onnx'), 4)
+        self.rotator = TRTEngine(join(model_dir, 'rotator.onnx'), 2)
+        self.editor = TRTEngine(join(model_dir, 'editor.onnx'), 4)
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
         self.morpher.configure_in_out_tensors()

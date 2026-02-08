@@ -162,42 +162,29 @@ class CoreTRT:
             ) if sr_a4k else None
         self.last_tha_output: np.ndarray | None = None
 
-        # 并行加载 RIFE / smaller_rifes / SR 的 engine
-        optional_specs: List[tuple] = []
+        # Initialize RIFE if model path provided
         if rife_model_enable:
-            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife',
+            rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
                                      f'rife_x{rife_model_scale}_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
-            optional_specs.append((rife_path, 2))
+            self.rife = TRTEngine(rife_path, 2)
+            self.rife.configure_in_out_tensors()
             if rife_model_scale >= 3:
                 x2_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife',
                                             f'rife_x2_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
-                optional_specs.append((x2_rife_path, 2))
+                x2_rife = TRTEngine(x2_rife_path, 2)
+                x2_rife.configure_in_out_tensors()
+                self.smaller_rifes.append(x2_rife)
             if rife_model_scale == 4:
-                x3_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife',
+                x3_rife_path = os.path.join(ezvtb_rt.EZVTB_DATA, 'rife', 
                                             f'rife_x3_{"fp16" if rife_model_fp16 else "fp32"}.onnx')
-                optional_specs.append((x3_rife_path, 2))
+                x3_rife = TRTEngine(x3_rife_path, 2)
+                x3_rife.configure_in_out_tensors()
+                self.smaller_rifes.append(x3_rife)
+
+        # Initialize SR if model path provided
         if sr_path is not None:
-            optional_specs.append((sr_path, 1))
-        if optional_specs:
-            optional_engines = load_engines_parallel(optional_specs)
-            idx = 0
-            if rife_model_enable:
-                self.rife = TRTEngine(optional_engines[idx][0], optional_engines[idx][1])
-                self.rife.configure_in_out_tensors()
-                idx += 1
-                if rife_model_scale >= 3:
-                    x2_rife = TRTEngine(optional_engines[idx][0], optional_engines[idx][1])
-                    x2_rife.configure_in_out_tensors()
-                    self.smaller_rifes.append(x2_rife)
-                    idx += 1
-                if rife_model_scale == 4:
-                    x3_rife = TRTEngine(optional_engines[idx][0], optional_engines[idx][1])
-                    x3_rife.configure_in_out_tensors()
-                    self.smaller_rifes.append(x3_rife)
-                    idx += 1
-            if sr_path is not None:
-                self.sr = TRTEngine(optional_engines[idx][0], optional_engines[idx][1])
-                self.sr.configure_in_out_tensors(rife_model_scale if rife_model_enable else 1)
+            self.sr = TRTEngine(sr_path, 1)
+            self.sr.configure_in_out_tensors(rife_model_scale if rife_model_enable else 1)
         if cache_max_giga > 0.0 and sr_model_enable:
             # SR outputs are upscaled (expected 1024x1024 RGBA)
             self.sr_cacher = Cacher(cache_max_giga, width=1024, height=1024)

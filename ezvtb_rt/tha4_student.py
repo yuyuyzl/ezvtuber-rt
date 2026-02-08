@@ -32,14 +32,9 @@ class THA4StudentEngines():
             vram_cache_size: Total GPU memory for caching (MB)
         """
         TRT_LOGGER.log(TRT_LOGGER.INFO, 'Creating Engines')
-        specs = [
-            (join(model_dir, 'face_morpher.onnx'), 1),
-            (join(model_dir, 'body_morpher.onnx'), 3),
-        ]
-        engines = load_engines_parallel(specs)
-        self.face_morpher = TRTEngine(engines[0][0], engines[0][1])
+        self.face_morpher = TRTEngine(join(model_dir, 'face_morpher.onnx'), 1)
         self.face_morpher.configure_in_out_tensors()
-        self.body_morpher = TRTEngine(engines[1][0], engines[1][1])
+        self.body_morpher = TRTEngine(join(model_dir, 'body_morpher.onnx'), 3)
         self.body_morpher.configure_in_out_tensors()
 
         # Create CUDA streams
