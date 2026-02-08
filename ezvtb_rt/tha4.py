@@ -15,12 +15,19 @@ class THA4EnginesSimple:
 
     def __init__(self, model_dir: str):
         TRT_LOGGER.log(TRT_LOGGER.INFO, "Creating THA4 simple engines")
-        self.decomposer = TRTEngine(join(model_dir, "decomposer.onnx"), 1)
-        self.combiner = TRTEngine(join(model_dir, "combiner.onnx"), 4)
-        self.morpher = TRTEngine(join(model_dir, "morpher.onnx"), 3)
-        self.body_morpher = TRTEngine(join(model_dir, "body_morpher.onnx"), 2)
-        self.upscaler = TRTEngine(join(model_dir, "upscaler.onnx"), 4)
-
+        specs = [
+            (join(model_dir, "decomposer.onnx"), 1),
+            (join(model_dir, "combiner.onnx"), 4),
+            (join(model_dir, "morpher.onnx"), 3),
+            (join(model_dir, "body_morpher.onnx"), 2),
+            (join(model_dir, "upscaler.onnx"), 4),
+        ]
+        engines = load_engines_parallel(specs)
+        self.decomposer = TRTEngine(engines[0][0], engines[0][1])
+        self.combiner = TRTEngine(engines[1][0], engines[1][1])
+        self.morpher = TRTEngine(engines[2][0], engines[2][1])
+        self.body_morpher = TRTEngine(engines[3][0], engines[3][1])
+        self.upscaler = TRTEngine(engines[4][0], engines[4][1])
         # Allocate IO buffers
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
@@ -81,12 +88,19 @@ class THA4Engines:
 
     def __init__(self, model_dir: str, vram_cache_size: float = 1.0, use_eyebrow: bool = True):
         TRT_LOGGER.log(TRT_LOGGER.INFO, "Creating THA4 engines")
-        self.decomposer = TRTEngine(join(model_dir, "decomposer.onnx"), 1)
-        self.combiner = TRTEngine(join(model_dir, "combiner.onnx"), 4)
-        self.morpher = TRTEngine(join(model_dir, "morpher.onnx"), 3)
-        self.body_morpher = TRTEngine(join(model_dir, "body_morpher.onnx"), 2)
-        self.upscaler = TRTEngine(join(model_dir, "upscaler.onnx"), 4)
-
+        specs = [
+            (join(model_dir, "decomposer.onnx"), 1),
+            (join(model_dir, "combiner.onnx"), 4),
+            (join(model_dir, "morpher.onnx"), 3),
+            (join(model_dir, "body_morpher.onnx"), 2),
+            (join(model_dir, "upscaler.onnx"), 4),
+        ]
+        engines = load_engines_parallel(specs)
+        self.decomposer = TRTEngine(engines[0][0], engines[0][1])
+        self.combiner = TRTEngine(engines[1][0], engines[1][1])
+        self.morpher = TRTEngine(engines[2][0], engines[2][1])
+        self.body_morpher = TRTEngine(engines[3][0], engines[3][1])
+        self.upscaler = TRTEngine(engines[4][0], engines[4][1])
         self.decomposer.configure_in_out_tensors()
         self.combiner.configure_in_out_tensors()
         self.morpher.configure_in_out_tensors()
