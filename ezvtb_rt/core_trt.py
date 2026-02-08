@@ -11,6 +11,33 @@ from typing import List
 import pyanime4k
 import cv2
 
+
+def _mark_interpolated_frames(frames: np.ndarray) -> None:
+    """插值帧打红点、原始帧打蓝点，仅当环境变量 EZVTB_MARK_INTERPOLATED=1 时生效。
+    支持 NHWC (N,H,W,4) 与 NCHW (N,4,H,W)，TRT 多为 NCHW，ORT 多为 NHWC。"""
+    if not os.environ.get('EZVTB_MARK_INTERPOLATED', '').strip() in ('1', 'true', 'True', 'yes'):
+        return
+    if len(frames.shape) != 4 or frames.shape[0] < 1:
+        return
+    if frames.dtype == np.uint8:
+        red_bgra = (0, 0, 255, 255)
+        blue_bgra = (255, 0, 0, 255)
+    else:
+        red_bgra = (0.0, 0.0, 1.0, 1.0)
+        blue_bgra = (1.0, 0.0, 0.0, 1.0)
+    n = frames.shape[0]
+    if frames.shape[1] == 4:
+        # NCHW (TensorRT 常见)，4x4 方块
+        for i in range(n - 1):
+            frames[i, :, 0:4, 0:4] = np.array(red_bgra, dtype=frames.dtype).reshape(4, 1, 1)
+        frames[n - 1, :, 0:4, 0:4] = np.array(blue_bgra, dtype=frames.dtype).reshape(4, 1, 1)
+    else:
+        # NHWC (ONNX 常见)，4x4 方块
+        for i in range(n - 1):
+            frames[i, 0:4, 0:4, :] = red_bgra
+        frames[n - 1, 0:4, 0:4, :] = blue_bgra
+
+
 def has_none_object_none_pattern(lst):
     if len(lst) < 3:
         return False
@@ -351,6 +378,7 @@ class CoreTRT:
                         self.cacher.put(hash(str(poses[i])), rife_mem_res.host[i])
             # Track last THA output for future interpolation
             self.last_tha_output = np.copy(tha_mem_res.host)
+            _mark_interpolated_frames(rife_mem_res.host)
         else:
             # No RIFE, SR-only uses THA output as a single-frame batch
             rife_mem_res = tha_mem_res
