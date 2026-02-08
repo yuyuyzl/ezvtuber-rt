@@ -224,11 +224,11 @@ class CoreORT:
                     for i in range(len(poses) - 1):
                         self.cacher.put(hash(str(poses[i])), rife_result[i])
             self.last_tha_output = tha_result
-            _mark_interpolated_frames(rife_result)
         else:
             rife_result = np.expand_dims(tha_result, axis=0)
 
         if self.sr is None and self.sr_a4k is None:  # Only RIFE
+            _mark_interpolated_frames(rife_result)
             return rife_result
 
         sr_process_func = self.sr_a4k_process if self.sr_a4k is not None else self.sr_onnx_process
@@ -283,6 +283,7 @@ class CoreORT:
                             self.sr_cacher.put(hs, sr_outputs[sr_idx])
                             sr_idx += 1
                     sr_result = np.stack(sr_result, axis=0)
+        _mark_interpolated_frames(sr_result)
         return sr_result
 
     def sr_onnx_process(self, frames: np.ndarray) -> np.ndarray:

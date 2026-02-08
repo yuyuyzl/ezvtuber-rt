@@ -378,12 +378,12 @@ class CoreTRT:
                         self.cacher.put(hash(str(poses[i])), rife_mem_res.host[i])
             # Track last THA output for future interpolation
             self.last_tha_output = np.copy(tha_mem_res.host)
-            _mark_interpolated_frames(rife_mem_res.host)
         else:
             # No RIFE, SR-only uses THA output as a single-frame batch
             rife_mem_res = tha_mem_res
         
         if self.sr is None and self.sr_a4k is None:
+            _mark_interpolated_frames(rife_mem_res.host)
             return np.copy(rife_mem_res.host)
         
         if self.sr is not None:
@@ -417,7 +417,9 @@ class CoreTRT:
                     sr_results.append(sr_img)
                     if self.sr_cacher is not None:
                         self.sr_cacher.put(hs, sr_img)
-        return np.stack(sr_results, axis=0)
+        result = np.stack(sr_results, axis=0)
+        _mark_interpolated_frames(result)
+        return result
 
     def a4k_infer_bgra(self, img_bgra: np.ndarray) -> np.ndarray:
         assert self.sr_a4k is not None, "a4k_infer_bgra called but sr_a4k is not initialized"
@@ -444,9 +446,13 @@ class CoreTRT:
                     self.sr.asyncKickoff(self.main_stream)
                     self.sr.outputs[0].dtoh(self.main_stream)
                     self.main_stream.synchronize()
-                    return np.concatenate((self.sr.outputs[0].host, np.expand_dims(cached_sr, axis=0)), axis=0)
+                    out = np.concatenate((self.sr.outputs[0].host, np.expand_dims(cached_sr, axis=0)), axis=0)
+                    _mark_interpolated_frames(out)
+                    return out
                 else: # there is only one frame to SR, which is cached
-                    return np.expand_dims(cached_sr, axis=0)
+                    out = np.expand_dims(cached_sr, axis=0)
+                    _mark_interpolated_frames(out)
+                    return out
             else: # No SR cache hit, dealing with single pose with RIFE interpolation followed by SR, or SR for a single tha result
                 sr_batch = rife_mem_res.host.shape[0] if len(rife_mem_res.host.shape) == 4 else 1
                 self.sr.configure_in_out_tensors(sr_batch)
@@ -456,7 +462,9 @@ class CoreTRT:
                 self.main_stream.synchronize()
                 if self.sr_cacher is not None:
                     self.sr_cacher.put(hs, self.sr.outputs[0].host[-1])
-                return np.copy(self.sr.outputs[0].host)
+                out = np.copy(self.sr.outputs[0].host)
+                _mark_interpolated_frames(out)
+                return out
         else: # Multiple poses with RIFE followed by SR
             assert len(rife_mem_res.host.shape) == 4 and rife_mem_res.host.shape[0] == len(poses)
             sr_results = [None] * len(poses)
@@ -467,7 +475,9 @@ class CoreTRT:
                 if sr_results[i] is None:
                     to_sr_images.append(rife_mem_res.host[i])
             if all(x is not None for x in sr_results): # All SR cached
-                return np.stack(sr_results, axis=0)
+                out = np.stack(sr_results, axis=0)
+                _mark_interpolated_frames(out)
+                return out
             else: # Some SR missing, run SR on missing ones
                 sr_batch = len(to_sr_images)
                 self.sr.configure_in_out_tensors(sr_batch)
@@ -485,4 +495,6 @@ class CoreTRT:
                         if self.sr_cacher is not None:
                             self.sr_cacher.put(hash(str(poses[i])), sr_results[i])
                         sr_output_idx += 1
-                return np.stack(sr_results, axis=0)     
+                out = np.stack(sr_results, axis=0)
+                _mark_interpolated_frames(out)
+                return out     
